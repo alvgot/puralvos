@@ -411,8 +411,6 @@ if grep -q "^audio:" "$FULL/etc/group"; then
 		NEW="${NEW:+$NEW,}$m"
 	done
 	NEW="${NEW:+$NEW,}$LIVE_USER"
-	# -p keeps the mode and ownership the squashfs gave the file.
-	sed -i "s|^audio:[^:]*:[^:]*:.*|audio:$(awk -F: '/^audio:/{print $2":"$3}') :|" /dev/null 2>/dev/null || true
 	awk -F: -v OFS=: -v members="$NEW" '
 		$1 == "audio" { $4 = members }
 		{ print }

@@ -10,7 +10,7 @@ BASE_URL := https://cdimage.ubuntu.com/ubuntustudio/releases/resolute/release/ub
 SCRIPTS  := scripts
 TOOLS   := tools
 
-.PHONY: help base verify-base kernel brand packages packages-report snap-census selftest rt-fix test-booth
+.PHONY: help base verify-base kernel brand packages packages-all packages-report snap-census selftest rt-fix test-booth
 ROOTFS ?= /var/tmp/puralvos-build/layer
 
 # Snap is a decision, not a lean. excludes.list carries it, but the census is
@@ -51,6 +51,11 @@ packages-report: ## inventory the built image and propose removals
 	@echo
 	@echo "Bare list of candidate package names:"
 	@echo "  python3 $(TOOLS)/report-packages.py --list-only"
+
+packages-all: ## write the complete installed package list
+	python3 $(TOOLS)/report-packages.py --all $(ROOTFS) > $(BASE_DIR)/puralvos/packages-installed.txt
+	@wc -l < $(BASE_DIR)/puralvos/packages-installed.txt | sed 's/^/  /'
+	@echo "  packages listed with versions, sorted, one per line"
 
 snap-census: ## list the snaps in the built image
 

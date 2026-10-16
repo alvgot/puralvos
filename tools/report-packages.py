@@ -159,6 +159,9 @@ def main():
                     help="rootfs to inspect (default: the build layer)")
     ap.add_argument("--list-only", action="store_true",
                     help="print only the removal candidates, one per line")
+    ap.add_argument("--all", action="store_true",
+                    help="print every installed package, name and version, "
+                         "grouped, with no analysis")
     args = ap.parse_args()
 
     installed, versions = read_status(args.root)
@@ -181,6 +184,17 @@ def main():
                 removals[category][1])
 
     total_candidates = sum(len(h) for h, _ in removals.values())
+
+    if args.all:
+        # A flat, sorted list with versions. Not grouped: grouping by package
+        # name prefix produced 2028 "groups" for 3360 packages, which is not a
+        # grouping, it is every package in its own box. The point of this
+        # output is to be complete and greppable, and `grep ardour` against a
+        # flat file is what anyone actually wants from it.
+        for name in names:
+            print("%s\t%s" % (name, versions.get(name, "")))
+        sys.stderr.write("%d packages\n" % len(names))
+        return 0
 
     if args.list_only:
         for hits, _ in removals.values():

@@ -119,8 +119,10 @@ as_desktop() {
 }
 
 say "INFO kernel=$(uname -r)"
+say "INFO uname=$(uname -a)"
 say "INFO distro=$(sed -n 's/^PRETTY_NAME="\(.*\)"$/\1/p' /etc/os-release 2>/dev/null | head -1)"
 say "INFO user=$PurUser uid=$PurUid home=$PurHome"
+say "INFO groups=$(id -nG "$PurUser" 2>/dev/null | tr ' ' ',')"
 say "INFO session=$SessionDir"
 say "INFO uptime=$(cut -d' ' -f1 /proc/uptime)s"
 

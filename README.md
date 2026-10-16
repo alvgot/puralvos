@@ -72,6 +72,7 @@ tasks.list                 what we install, and why. Single source of truth
 excludes.list              what we deliberately do not ship, with reasons
 apt/puralvos.sources       archive and components
 base/CHECKSUMS             pinned checksum of the base ISO
+base/puralvos/            generated package list and declaration
 brand/tokens.json          the palette, one input for the whole identity
 brand/assets/              generated mark, wordmark, glyphs, wallpapers
 tools/make-brand.py        generate every brand asset from tokens.json

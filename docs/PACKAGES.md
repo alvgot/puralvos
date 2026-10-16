@@ -32,6 +32,34 @@ The largest families, by package-name prefix:
 | `vlc` | 14 |
 | `cups` | 13 |
 
+## The complete list
+
+`base/puralvos/packages-installed.txt` — **all 3360 packages, with versions**,
+one per line, sorted, tab separated, greppable.
+
+```
+$ grep -P '^ardour' base/puralvos/packages-installed.txt
+ardour                    1:9.0.0+ds-1ubuntu2
+ardour-data               1:9.0.0+ds-1ubuntu2
+ardour-lv2-plugins        1:9.0.0+ds-1ubuntu2
+ardour-video-timeline     1:9.0.0+ds-1ubuntu2
+
+$ grep -P '^jackd2' base/puralvos/packages-installed.txt
+jackd2                    1.9.22~dfsg-5build1
+jackd2-firewire           1.9.22~dfsg-5build1
+```
+
+Regenerated with `make packages-all`. It is read out of the built rootfs, so
+it cannot drift from what is actually installed.
+
+Note the versions in that list are the versions **as built today**. Firefox
+shows `1:1snap1-0ubuntu8` because that is what the Ubuntu archive ships — see
+the Firefox section below for why that gets replaced.
+
+The first version of this output was grouped by package-name prefix, which
+produced 2028 "groups" for 3360 packages. That is not a grouping, it is every
+package in its own box, and it is why the list is flat.
+
 ## Snap census
 
 Snap is not a package count, it is disk. Counted off the built
