@@ -1,0 +1,106 @@
+# What PuralvOS deliberately does not ship
+#
+# Format: one package or glob per line, "#" starts a comment, blank lines are
+# ignored. This file is applied AFTER the tasks in tasks.list.
+#
+# Read this as a list of decisions, not a list of rubbish. Each entry says why
+# it is here, because a removal with no stated reason is one that will get
+# reverted by somebody who cannot tell what it was for.
+#
+# The single most important structural choice is what is NOT in tasks.list:
+# ubuntustudio-desktop is never installed. It is what drags in LibreOffice,
+# snapd, synaptic, printer drivers and avahi. Excluding those one at a time
+# afterwards is a losing game against its Recommends list, so PuralvOS simply
+# does not ask for it. Everything below is what leaks in through other routes.
+
+# --- kernel ---------------------------------------------------------------
+#
+# Only one kernel boots a PuralvOS machine: the real time one. The general
+# kernel comes in as a dependency of the desktop metapackages and as the
+# default on the installation media, and leaving both installed means the
+# machine might boot the wrong one after a routine upgrade, which for an audio
+# workstation is a latency regression nobody would notice until a show.
+#
+# The order matters. linux-lowlatency is installed in tasks.list FIRST, then
+# the general kernel is removed. Removing first would let apt decide to keep
+# the lowlatency kernel only as a recommendation.
+
+linux-generic
+linux-generic-hwe-26.04
+linux-generic-hwe-26.04-edge
+linux-image-generic
+linux-image-generic-hwe-26.04
+linux-image-generic-hwe-26.04-edge
+linux-headers-generic
+linux-headers-generic-hwe-26.04
+linux-headers-generic-hwe-26.04-edge
+
+# --- general purpose desktop ----------------------------------------------
+#
+# A document suite is not an audio or video tool. It arrives because the
+# installation media seeds it; PuralvOS is a workstation image, not a general
+# desktop with a media section.
+
+libreoffice-calc
+libreoffice-impress
+libreoffice-core
+libreoffice-common
+libreoffice-core-nogui
+libreoffice-style-colibre
+libreoffice-style-sifr
+libreoffice-qt6
+libreoffice-plasma
+libreoffice-kf6
+libreoffice-writer
+
+# --- packaging and app distribution ---------------------------------------
+#
+# snapd is excluded because it is a second package manager with its own
+# daemon, its own store and its own opinions about what "installed" means. On
+# an image whose entire promise is "these packages are the ones we test and
+# upgrade", a parallel package system that nobody audits is a liability.
+#
+# REQUIRES A DECISION: several audio tools (spotify, some plugin managers,
+# some instrument libraries) are distributed on snap. If PuralvOS is to offer
+# them, snapd comes back and this line goes away. Deciding by looking at what
+# the curated task set actually needs is better than deciding now.
+
+snapd
+snapd-desktop-integration
+
+# synaptic duplicates apt and gets no package pinning, which is exactly the
+# behaviour PuralvOS has to avoid: an unpinned upgrade tool would happily
+# pull a new kernel past the curated set.
+synaptic
+
+# --- hardware nobody doing media needs ------------------------------------
+#
+# Printer drivers, firmware updaters and PCMCIA/CardBus support come from the
+# general desktop. A workstation that only does audio and video does not need
+# to know what a LaserJet 4000 is.
+
+hplip
+printer-driver-brlaser
+printer-driver-c2esp
+printer-driver-foo2zjs
+printer-driver-m2300w
+printer-driver-min12xxw
+printer-driver-ptouch
+printer-driver-pxljr
+printer-driver-sag-gdi
+printer-driver-splix
+cups-filters
+
+# firmware updates touch the flash chip of every device in the machine. On a
+# live image that is a genuinely bad idea, and on an installed one it is an
+# update the user should trigger deliberately, not something an image
+# refresh does behind their back.
+fwupd
+fwupd-signed
+
+pcmciautils
+laptop-detect
+
+# --- diagnostics that only matter when something is already broken --------
+
+memtest86+

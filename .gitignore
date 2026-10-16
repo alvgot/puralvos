@@ -1,0 +1,9 @@
+# The base ISO is 6.6 GB and is fetched, not committed.
+#
+# Its checksum is pinned in base/CHECKSUMS so the build always verifies what it
+# downloaded. Committing the image itself would make the repository unusable and
+# is how "add the ISO" ends with a 6 GB git push that nobody can clone.
+
+base/*.iso
+base/*.iso.*
+base/*.tmp

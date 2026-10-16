@@ -1,0 +1,18 @@
+Types: deb
+URIs: http://archive.ubuntu.com/ubuntu/
+Suites: resolute resolute-updates resolute-security
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+# PuralvOS is built on the standard Ubuntu archive and deliberately enables
+# multiverse and restricted.
+#
+# Unlike dyneV, which is main-only and carries no blobs at all, PuralvOS takes
+# the opposite position: use everything that works. That means proprietary
+# firmware, restricted graphics drivers and unfree codecs are in scope on
+# purpose. They are what makes an NVIDIA card, a Broadcom WiFi chip and a
+# H.264 stream just work, and on a media workstation those are not niceties.
+#
+# The cost is that the image cannot claim to be free software. tools/manifest.py
+# exists to keep track of exactly what non-free it carries, so the choice stays
+# a decision rather than an accident.

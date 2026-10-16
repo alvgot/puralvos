@@ -1,0 +1,87 @@
+# PuralvOS task set
+#
+# What PuralvOS installs, and nothing else.
+#
+# This list is not invented. It is the Ubuntu Studio Installer's own task table,
+# taken from backend.py in ubuntustudio-installer 2.0.7 (resolute):
+#
+#     METAPACKAGES = (
+#         "ubuntustudio-lowlatency-settings",
+#         "ubuntustudio-performance-tweaks",
+#         "ubuntustudio-audio",
+#         "ubuntustudio-graphics",
+#         "ubuntustudio-photography",
+#         "ubuntustudio-publishing",
+#         "ubuntustudio-video",
+#         "ubuntustudio-wallpapers",
+#         "ubuntustudio-menu",
+#         "ubuntu-edu-music",
+#     )
+#
+# PuralvOS is that list minus photography and publishing. Everything else is
+# carried over unchanged, because the upstream tasks are curated by people who
+# know which combination of applications actually cooperates with PipeWire,
+# which plugins build, and which plugin hosts need which libraries.
+#
+# Resolved against Ubuntu 26.04.1 LTS (resolute), ubuntustudio-* 26.04.20.
+
+# --- the three tasks that define the product -------------------------------
+
+ubuntustudio-audio
+ubuntustudio-video
+ubuntustudio-graphics
+
+# --- real time performance ------------------------------------------------
+#
+# The reason this is more than "Ubuntu with three boxes ticked".
+
+ubuntustudio-lowlatency-settings
+ubuntustudio-performance-tweaks
+
+# --- session and shell integration ----------------------------------------
+
+ubuntustudio-default-settings
+ubuntustudio-menu
+ubuntustudio-pipewire-config
+
+# --- kernel ---------------------------------------------------------------
+#
+# The real time kernel, taken from the Ubuntu archive. No PPA, which matters
+# twice over: PPAs need apt pinning to work at all, and they are the usual way
+# a system ends up holding a kernel nobody will ever patch.
+#
+# Ubuntu 26.04 carries all of these in main:
+#
+#     linux-lowlatency           linux-lowlatency-7.0
+#     linux-lowlatency-hwe-26.04 linux-image-realtime
+#     linux-realtime             linux-realtime-7.0
+#
+# lowlatency rather than realtime: lowlatency trades a little throughput for
+# predictable latency and is what Ubuntu Studio documents for audio work.
+# realtime is the PREEMPT_RT build and is the better choice for hard real time
+# plugin hosting. Both are one line apart, both ship in the archive, so
+# changing this is a rebuild and not a redesign.
+#
+# NOTE: the stock Ubuntu Studio ISO does NOT ship this kernel. Its manifest
+# carries only linux-generic 7.0.0-14.14. The real time kernel is installed
+# into the installed system by the installer, so PuralvOS has to do it
+# explicitly or it will silently be a general kernel.
+
+linux-lowlatency
+
+# --- deliberately absent --------------------------------------------------
+#
+# Not in this list, on purpose:
+#
+#   ubuntustudio-photography   darktable and friends; PuralvOS is audio, video
+#                              and graphics
+#   ubuntustudio-publishing    scribus, calibre and a document suite; not
+#                              media production
+#   ubuntustudio-wallpapers    optional, kept out so the image carries only
+#                              what does work
+#   ubuntu-edu-music           music education classroom tools; revisit if
+#                              PuralvOS grows an education story
+#   ubuntu-studio-desktop      THE umbrella. Installing it is how a media
+#                              workstation turns into a general desktop with
+#                              LibreOffice, snapd, synaptic and printer drivers
+#                              in it. Never install it here; see excludes.list.
