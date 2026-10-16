@@ -10,8 +10,15 @@ BASE_URL := https://cdimage.ubuntu.com/ubuntustudio/releases/resolute/release/ub
 SCRIPTS  := scripts
 TOOLS   := tools
 
-.PHONY: help base verify-base kernel brand packages packages-report selftest rt-fix test-booth
+.PHONY: help base verify-base kernel brand packages packages-report snap-census selftest rt-fix test-booth
 ROOTFS ?= /var/tmp/puralvos-build/layer
+
+# Snap is a decision, not a lean. excludes.list carries it, but the census is
+# here because the saving is in gigabytes and a package list hides that.
+snap-census:
+	@echo "snaps under \$$ROOTFS/var/lib/snapd/snaps:"
+	@ls -1 $(ROOTFS)/var/lib/snapd/snaps/*.snap 2>/dev/null | xargs -r -n1 basename | sed 's/^/  /' || echo "  none"
+	@du -sh $(ROOTFS)/var/lib/snapd 2>/dev/null | sed 's/^/  total: /' || true
 help:
 	@echo "PuralvOS"
 	@grep -E '^[a-z-]+:.*?##' $(MAKEFILE_LIST) | sed 's/:.*##/\t/' | expand -t18
@@ -44,6 +51,8 @@ packages-report: ## inventory the built image and propose removals
 	@echo
 	@echo "Bare list of candidate package names:"
 	@echo "  python3 $(TOOLS)/report-packages.py --list-only"
+
+snap-census: ## list the snaps in the built image
 
 selftest: ## run the self test in a booted image (not on this machine)
 	@echo "puralvos-selftest runs INSIDE a booted PuralvOS image, not here."

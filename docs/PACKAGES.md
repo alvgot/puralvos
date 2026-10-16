@@ -7,8 +7,8 @@ Measured from `/var/tmp/puralvos-build/layer`, not from a list somebody wrote do
 | | |
 | --- | --- |
 | Installed packages | **3360** |
-| Removal candidates | **69** (2.1%) |
-| Would remain | **3291** |
+| Removal candidates | **71** (2.1%) |
+| Would remain | **3289** |
 
 ## Where the weight is
 
@@ -31,6 +31,20 @@ The largest families, by package-name prefix:
 | `kde` | 16 |
 | `vlc` | 14 |
 | `cups` | 13 |
+
+## Snap census
+
+Snap is not a package count, it is disk. Counted off the built
+rootfs rather than assumed.
+
+| | |
+| --- | --- |
+| Snaps installed | **16** |
+| .snap payloads | **2035 MB** |
+
+`bare`, `core24`, `desktop-security-center`, `firefox`, `firmware-updater`, `freeshow`, `gnome-46-2404`, `gtk-common-themes`, `gtk-theme-orchis`, `icon-theme-breeze`, `mesa-2404`, `prompting-client`, `snapd`, `snapd-desktop-integration`, `thunderbird`, `ubuntu-desktop-bootstrap`
+
+PuralvOS ships none of these. See `excludes.list`.
 
 ## Removal candidates
 
@@ -55,11 +69,11 @@ The whole office suite. 20 packages. PuralvOS is audio, video and graphics; this
 
 `bluez-cups`, `cups`, `cups-browsed`, `cups-bsd`, `cups-client`, `cups-common`, `cups-core-drivers`, `cups-daemon`, `cups-filters`, `cups-filters-core-drivers`, `cups-ipp-utils`, `cups-pk-helper`, ... (4 more)
 
-### snap — 3 packages
+### snap — 5 packages
 
-Snapd and its libraries. Snaps add a second package manager with its own update schedule, which is exactly the thing the curated upgrade path exists to avoid.
+Snapd, its libraries, Plasma's snap backend, and the two applications that are themselves snaps. This is the largest single saving in the build and it is not a package count: the stock image carries 14 snaps and about 4 GB of /var/lib/snapd, against a whole 69-package trim that saves far less. Firefox and Thunderbird go with it, because in the archive those packages are transitional wrappers whose only job is to install the snap.
 
-`libsnapd-glib-2-1`, `libsnapd-qt-2-1`, `snapd`
+`firefox`, `libsnapd-glib-2-1`, `libsnapd-qt-2-1`, `plasma-discover-backend-snap`, `snapd`
 
 ### package manager — 1 packages
 
@@ -143,38 +157,39 @@ build failure, not a trimming opportunity.
 Studio ISO carries only `linux-generic`, so its presence here is
 this build's single most important difference from the base.
 
-## How to regenerate
+## Snap is out. Not as a lean, as a rule.
 
-```sh
-python3 tools/report-packages.py                     # markdown, to stdout
-python3 tools/report-packages.py --list-only          # bare package names
+Alv: "never use snap to install apps, it's really terrible." Agreed, and the
+size of it is worth stating plainly:
+
+| | |
+| --- | --- |
+| Snaps in the stock image | **16** |
+| `/var/lib/snapd` | **4.0 GB** |
+| `.snap` payloads alone | **2.0 GB** |
+
+That is **more than the entire 69-package trim saves.** The largest single
+saving available anywhere in this build is not removing software, it is
+removing a second package manager.
+
+```
+bare  core24  desktop-security-center  firefox  firmware-updater  freeshow
+gnome-46-2404  gtk-common-themes  gtk-theme-orchis  icon-theme-breeze
+mesa-2404  prompting-client  snapd  snapd-desktop-integration
+thunderbird  ubuntu-desktop-bootstrap
 ```
 
-## The bigger finding: the base live image is not a full Studio install
+### The consequence worth deciding now
 
-Eight applications that `tasks.list` promises are simply not in the stock
-Ubuntu Studio live image:
+**Firefox and Thunderbird are snaps on the stock image.** Excluding snapd
+removes them, and purging the `firefox` deb does not help either — in the
+Ubuntu archive that package is a *transitional wrapper* whose only job is to
+install the snap.
 
-```
-shotcut  olive-editor  openshot-qt  pitivi  handbrake
-scribus  freecad       openscad
-```
+So if either is wanted, the choice is Mozilla's own apt repository (a real
+repository, real signing, upstream-maintained debs) or nothing. That is not
+the same trade as snap and it is worth making deliberately rather than
+discovering a missing browser after burning an ISO.
 
-Audio is complete (Ardour, Audacity, Mixxx, JACK, qjackctl, Musescore) and the
-core of video is there (Kdenlive with MLT, VLC, OBS, subtitleeditor). What is
-missing is the long tail.
-
-**This is not a trimming problem, it is a gap in the build.** The stock live
-layer carries what Ubuntu Studio's *live session* ships, which is deliberately
-smaller than a full desktop install. `ubuntustudio-video` and
-`ubuntustudio-graphics` being installed is not the same as their contents
-being present.
-
-So the build has to install the curated task packages into the chroot
-explicitly, not rely on inheriting them from the base. `tools/build-live.sh`
-does not do that yet, and until it does, the live image is missing part of the
-product no matter how much else is trimmed.
-
-Worth deciding: does the live image need the full application set at all, or
-is a lean live image that installs the full set on first boot the better
-shape? The second is smaller and is what Ubuntu Studio itself does.
+Everything else in the curated set — Ardour, Kdenlive, VLC, GIMP, Inkscape,
+OBS, JACK, PipeWire — is deb-based already and is unaffected.

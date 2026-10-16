@@ -54,19 +54,43 @@ libreoffice-kf6
 libreoffice-writer
 
 # --- packaging and app distribution ---------------------------------------
-#
-# snapd is excluded because it is a second package manager with its own
-# daemon, its own store and its own opinions about what "installed" means. On
-# an image whose entire promise is "these packages are the ones we test and
-# upgrade", a parallel package system that nobody audits is a liability.
-#
-# REQUIRES A DECISION: several audio tools (spotify, some plugin managers,
-# some instrument libraries) are distributed on snap. If PuralvOS is to offer
-# them, snapd comes back and this line goes away. Deciding by looking at what
-# the curated task set actually needs is better than deciding now.
+  #
+  # NO SNAP. Not a leaning, a decision, and not one to be revisited per package.
+  #
+  # snapd is a second package manager with its own daemon, its own store, its
+  # own update schedule and its own opinions about what "installed" means. On
+  # an image whose entire promise is "these packages are the ones we test and
+  # upgrade", a parallel system nobody audits is a liability.
+  #
+  # The stock Ubuntu Studio live image carries 4 GB of it: 14 snaps and 2 GB of
+  # .snap payloads under /var/lib/snapd. That is more than the whole 69-package
+  # trim saves, so this is the largest single saving available in the build.
+  #
+  # The snaps it carries are firefox, thunderbird, gnome-46-2404, core24,
+  # firmware-updater, desktop-security-center, prompting-client,
+  # snapd-desktop-integration, ubuntu-desktop-bootstrap and several theme and
+  # runtime bases.
+  #
+  # CONSEQUENCE, stated now rather than discovered later: on the stock image
+  # Firefox and Thunderbird ARE snaps. Excluding snapd removes them, and
+  # purging the `firefox` deb does not help either, because in the archive
+  # that package is a transitional wrapper whose only job is to install the
+  # snap. If Firefox is wanted it has to come from Mozilla's own apt
+  # repository, which is a real repository with real signing and is not the
+  # same thing as a snap. Decide that before an image is built, not after
+  # somebody notices the browser has vanished.
+  #
+  # plasma-discover-backend-snap is only a Recommends of plasma-discover, so
+  # building with --no-install-recommends drops it without a fight.
+  #
+  # The apt sources are pinned to the Ubuntu archive in apt/puralvos.sources.
+  # Anything not in it does not get into a PuralvOS image by accident.
 
-snapd
-snapd-desktop-integration
+  snapd
+  snapd-desktop-integration
+  plasma-discover-backend-snap
+  firefox
+  thunderbird
 
 # synaptic duplicates apt and gets no package pinning, which is exactly the
 # behaviour PuralvOS has to avoid: an unpinned upgrade tool would happily

@@ -63,10 +63,14 @@ RULES = [
      "21 packages of printer support, including HP drivers. A workstation in "
      "a room is not a print server."),
 
-    ("snap", r"^snapd$|^libsnapd",
-     "Snapd and its libraries. Snaps add a second package manager with its "
-     "own update schedule, which is exactly the thing the curated upgrade "
-     "path exists to avoid."),
+    ("snap", r"^snapd$|^snapd-desktop-integration|^libsnapd|^plasma-discover-backend-snap$|^firefox$|^thunderbird$",
+     "Snapd, its libraries, Plasma's snap backend, and the two applications "
+     "that are themselves snaps. This is the largest single saving in the "
+     "build and it is not a package count: the stock image carries 14 snaps "
+     "and about 4 GB of /var/lib/snapd, against a whole 69-package trim that "
+     "saves far less. Firefox and Thunderbird go with it, because in the "
+     "archive those packages are transitional wrappers whose only job is to "
+     "install the snap."),
 
     ("package manager", r"^synaptic$",
      "A GTK front end for apt. apt is the package manager and it stays."),
@@ -211,6 +215,35 @@ def main():
     print("| --- | --- |")
     for k, v in pref.most_common(15):
         print("| `%s` | %d |" % (k, v))
+    print()
+
+    print("## Snap census")
+    print()
+    print("Snap is not a package count, it is disk. Counted off the built")
+    print("rootfs rather than assumed.")
+    print()
+    snapdir = os.path.join(args.root, "var", "lib", "snapd", "snaps")
+    snaps, snapbytes = [], 0
+    if os.path.isdir(snapdir):
+        for fn in sorted(os.listdir(snapdir)):
+            if not fn.endswith(".snap"):
+                continue
+            snaps.append(fn.rsplit("_", 1)[0])
+            try:
+                snapbytes += os.path.getsize(os.path.join(snapdir, fn))
+            except OSError:
+                pass
+    if snaps:
+        print("| | |")
+        print("| --- | --- |")
+        print("| Snaps installed | **%d** |" % len(snaps))
+        print("| .snap payloads | **%.0f MB** |" % (snapbytes / 1048576.0))
+        print()
+        print("`%s`" % "`, `".join(sorted(set(snaps))))
+        print()
+        print("PuralvOS ships none of these. See `excludes.list`.")
+    else:
+        print("No snaps installed.")
     print()
 
     print("## Removal candidates")
