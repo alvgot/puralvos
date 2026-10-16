@@ -8,11 +8,12 @@ other an A, and they interlock. Both are waveforms because audio is the
 discipline that most defines this machine, and because a wordmark drawn as a
 waveform cannot be mistaken for a font sample.
 
-It also avoids the trap this project has to avoid entirely. dyne:bolic's logo
-is a spectrum, Ubuntu Studio's is a stylised studio mark; a spectrum-based
-identity would read as a dyne:bolic derivative, and Ubuntu's orange is a
-trademark. So: two complementary waveforms in three accents, no orange, no
-spectrum.
+Two things are ruled out on purpose. No orange, because that is Ubuntu's
+trademark and this image is not Ubuntu's. No spectrum either: a spectrum is
+the obvious choice for a three-discipline logo and it is exactly the mark the
+Freesh-derived audio lineage already uses, so an identity built on it would
+read as somebody else's. Two complementary letterforms in three accents, and
+nothing that has to be explained.
 
 Output is SVG because it stays sharp from a 16 px menu icon to a 4 K wallpaper
 and can be recoloured without re-running anything.

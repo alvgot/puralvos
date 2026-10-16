@@ -39,9 +39,8 @@ ISO: `ubuntustudio-26.04.1-desktop-amd64.iso`, 6.6 GB, checksum pinned in
 
 PuralvOS ships proprietary software on purpose.
 
-This is a deliberate position and the opposite of the dyneV image, which is
-main-only with no blobs anywhere including its kernel. PuralvOS enables
-`multiverse` and `restricted` because everything that works is the requirement:
+This is a deliberate position. PuralvOS enables `multiverse` and `restricted`
+because everything that works is the requirement:
 NVIDIA drivers, Intel and Broadcom WiFi firmware, unfree codecs. A media
 workstation that refuses to drive the graphics card in the machine is not a
 workstation.
@@ -76,6 +75,8 @@ base/CHECKSUMS             pinned checksum of the base ISO
 brand/tokens.json          the palette, one input for the whole identity
 brand/assets/              generated mark, wordmark, glyphs, wallpapers
 tools/make-brand.py        generate every brand asset from tokens.json
+tools/make-package-declaration.py   derive the package list from tasks.list
+tools/puralvos-selftest    verify a booted image from the inside
 tools/kernel-select.py     find the real time kernel by asking apt
 tools/upgrade-curated.sh   upgrade our packages, leave yours alone
 docs/ARCHITECTURE.md       how the images are built
@@ -90,6 +91,7 @@ docs/PERFORMANCE.md        what "fast" means here, as numbers that can fail
 make base          # fetch and verify the Ubuntu Studio ISO
 make kernel        # ask apt which real time kernel to use
 make brand         # generate the identity assets
+make packages      # derive the package declaration from tasks.list
 ```
 
 ## The kernel

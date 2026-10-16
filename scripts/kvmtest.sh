@@ -1,5 +1,5 @@
 #!/bin/bash
-# KVM test harness for dyne:bolic live images.
+# KVM test harness for PuralvOS images.
 #
 # Boots an ISO headlessly under KVM, mirrors the serial console to a log,
 # and captures periodic screenshots through the QMP screendump command, so

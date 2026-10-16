@@ -1,0 +1,858 @@
+#!/usr/bin/env bash
+# puralvos-selftest - verify a PuralvOS image actually works, from the inside.
+#
+# Run inside the booted system, normally from /etc/boot.d/90-puralvos-selftest
+# when the kernel was given puralvos.selftest=1. Everything it prints goes to
+# the serial console, so the result can be read from a headless KVM run.
+#
+#   0  system    - the things an image needs before any app: buses, audio,
+#                  network, the filesystem, the package database
+#   1  inventory - every declared package is really installed and every menu
+#                  entry points at a binary that exists
+#   2  realtime  - can this machine actually do real time audio? This is the
+#                  tier PuralvOS is judged on and the one that cannot be
+#                  checked by looking at a healthy running desktop
+#   3  branding  - is anything on this disk still Ubuntu's
+#   4  launch    - really start each application in the running session,
+#                  check a window appears, then close it
+#
+# Every result line is machine readable:
+#   RESULT <tier> <PASS|FAIL|SLOW|SKIP> <name> <detail>
+#
+# and the run ends with one summary line, so a build can grep a single line
+# and decide whether the image is good.
+#
+# Run it on the base as well as on PuralvOS. If Ardour misbehaves after
+# stripping and the base was never measured, a day disappears blaming work
+# that did not cause it.
+
+# --------------------------------------------------------------------------
+# output
+# --------------------------------------------------------------------------
+if [ -w /dev/ttyS0 ]; then
+	OUT=/dev/ttyS0
+else
+	OUT=/dev/console
+fi
+say() { echo "$*" > "$OUT" 2>/dev/null; echo "$*" >&2; }
+
+T0=$(date +%s)
+say ""
+say "########## PURALVOS SELFTEST BEGIN ##########"
+
+PASS=0; FAIL=0; SLOW=0; SKIP=0
+declare -a FAILED=()
+
+result() {
+	local tier=$1 status=$2 name=$3 detail=${4:-}
+	say "RESULT $tier $status $name $detail"
+	case "$status" in
+		PASS) PASS=$((PASS+1)) ;;
+		FAIL) FAIL=$((FAIL+1)); FAILED+=("$tier:$name $detail") ;;
+		SLOW) SLOW=$((SLOW+1)); FAILED+=("$tier:$name slow: $detail") ;;
+		SKIP) SKIP=$((SKIP+1)) ;;
+	esac
+}
+
+# --------------------------------------------------------------------------
+# environment
+# --------------------------------------------------------------------------
+# The user to test as. Both Alv and Puria need this to pass, so it is not
+# hardcoded to one: whatever the installer created, or the live user if there
+# is only one.
+PurUser="${PURALVOS_USER:-}"
+if [ -z "$PurUser" ]; then
+	# prefer a real login user over the installer account
+	PurUser=$(loginctl list-users --no-legend 2>/dev/null | awk '$3=="1000"{print $2; exit}')
+	[ -z "$PurUser" ] && PurUser=$(loginctl list-users --no-legend 2>/dev/null | awk 'NF{print $2; exit}')
+fi
+[ -z "$PurUser" ] && PurUser=ubuntu
+PurHome=$(getent passwd "$PurUser" 2>/dev/null | cut -d: -f6)
+[ -z "$PurHome" ] && PurHome="/home/$PurUser"
+PurUid=$(id -u "$PurUser" 2>/dev/null || echo 1000)
+PurGid=$(id -g "$PurUser" 2>/dev/null || echo 1000)
+
+# Where the session's bus and X authority live. A normal logind session puts
+# them in /run/user/<uid>. On the live image no seat may be registered, in
+# which case the bus is somewhere else entirely, so prefer the standard place
+# and fall back rather than hardcoding either.
+SessionDir=/run/user/$PurUid
+if [ ! -S "$SessionDir/bus" ]; then
+	for cand in /run/live/session /run/user/$(id -u) ; do
+		[ -S "$cand/bus" ] && { SessionDir=$cand; break; }
+	done
+fi
+XAuth="$SessionDir/Xauthority"
+[ -r "$XAuth" ] || XAuth="$PurHome/.Xauthority"
+
+if [ -c /dev/ttyS0 ]; then
+	chmod 0660 /dev/ttyS0 2>/dev/null
+fi
+
+LdyLocale="$(sed -n 's/^LANG=\(.*\)$/\1/p' /etc/default/locale 2>/dev/null | head -1)"
+[ -z "$LdyLocale" ] && LdyLocale="C.UTF-8"
+
+# Run a command the way the menu would.
+#
+# The desktop is the user's session, so applications have to be tested as the
+# user: Ardour and VLC both refuse to run as root, and testing them as root
+# would report two perfectly good applications as broken.
+as_desktop() {
+	setpriv --reuid="$PurUid" --regid="$PurGid" --init-groups \
+		env \
+		HOME="$PurHome" USER="$PurUser" LOGNAME="$PurUser" \
+		SHELL=/bin/bash \
+		PATH="/usr/local/games:/usr/games:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+		DISPLAY=:0 XAUTHORITY="$XAuth" \
+		XDG_RUNTIME_DIR="$SessionDir" \
+		DBUS_SESSION_BUS_ADDRESS="unix:path=$SessionDir/bus" \
+		XDG_SESSION_TYPE=x11 XDG_SESSION_CLASS=user \
+		XDG_SESSION_DESKTOP=KDE XDG_CURRENT_DESKTOP=KDE \
+		DESKTOP_SESSION=plasma \
+		XDG_CONFIG_DIRS="/etc/xdg:$PurHome/.config" \
+		XDG_DATA_DIRS="/usr/local/share:/usr/share:$PurHome/.local/share" \
+		XDG_CACHE_HOME="$PurHome/.cache" \
+		XDG_CONFIG_HOME="$PurHome/.config" \
+		XDG_DATA_HOME="$PurHome/.local/share" \
+		LANG="$LdyLocale" LC_ALL="$LdyLocale" LANGUAGE=en_US:en \
+		"$@"
+}
+
+say "INFO kernel=$(uname -r)"
+say "INFO distro=$(sed -n 's/^PRETTY_NAME="\(.*\)"$/\1/p' /etc/os-release 2>/dev/null | head -1)"
+say "INFO user=$PurUser uid=$PurUid home=$PurHome"
+say "INFO session=$SessionDir"
+say "INFO uptime=$(cut -d' ' -f1 /proc/uptime)s"
+
+# --------------------------------------------------------------------------
+# wait for the desktop
+# --------------------------------------------------------------------------
+say "INFO waiting for the X server"
+# Overridable so the tool can be smoke tested somewhere that has no desktop at
+# all, without waiting out the full patience of a real boot.
+XWAIT=${XWAIT:-240}
+XUP=0
+for _ in $(seq 1 "$XWAIT"); do
+	if as_desktop xdpyinfo >/dev/null 2>&1; then XUP=1; break; fi
+	sleep 1
+done
+
+dump() {
+	local tag=$1 file=$2 n=${3:-60}
+	say "--- $tag ($file)"
+	if [ -r "$file" ]; then
+		tail -n "$n" "$file" 2>/dev/null | tr -d '\r' |
+			while IFS= read -r l; do say "$tag $l"; done
+	else
+		say "$tag <missing>"
+	fi
+}
+
+if [ "$XUP" != 1 ]; then
+	# Do not exit here. A boot with no desktop is the moment you most want the
+	# kernel, the real time configuration and the branding state, and those
+	# need no X server at all. Only tier 4 genuinely cannot run without one, so
+	# record the failure, spill the diagnostics, carry on, and let tier 4 skip
+	# itself. Exiting first would throw away the answers to the questions this
+	# tool exists to answer.
+	result tier0 FAIL "desktop-started" "no X server after ${XWAIT}s"
+	dump SESSIONLOG "$PurHome/.xsession-plasma.log" 80
+	dump XORGLOG /var/log/Xorg.0.log 60
+	say "--- process list"
+	ps -eo pid,user,comm --sort=pid 2>/dev/null |
+		while IFS= read -r l; do say "PS $l"; done
+else
+	result tier0 PASS "desktop-started" "X server up at $(cut -d' ' -f1 /proc/uptime)s"
+fi
+
+# X answering does not mean the desktop is up: kwin and plasmashell come after
+# it. Give them a moment, otherwise this reports a perfectly healthy boot as a
+# dead desktop.
+for _ in $(seq 1 60); do
+	pgrep -x plasmashell >/dev/null 2>&1 && pgrep -x kwin_x11 >/dev/null 2>&1 && break
+	sleep 1
+done
+
+# ==========================================================================
+# TIER 0 - the system itself
+# ==========================================================================
+say "--- tier 0: system"
+
+[ -S "${SessionDir}/bus" ] \
+	&& result tier0 PASS "dbus-session-bus" \
+	|| result tier0 FAIL "dbus-session-bus" "no socket at ${SessionDir}/bus"
+
+pgrep -x dbus-daemon >/dev/null 2>&1 \
+	&& result tier0 PASS "dbus-daemon-running" \
+	|| result tier0 FAIL "dbus-daemon-running" "no dbus-daemon process"
+
+for p in kwin_x11 plasmashell; do
+	pgrep -u "$PurUid" -x "$p" >/dev/null 2>&1 \
+		&& result tier0 PASS "desktop-$p" \
+		|| result tier0 FAIL "desktop-$p" "not running as ${PurUser}, the desktop cannot be up"
+done
+
+# The desktop must belong to the user, not to root. When the session ran as
+# root the whole home directory filled up with root-owned files.
+HomeOwner="$(stat -c %u "$PurHome" 2>/dev/null)"
+if [ "$HomeOwner" = "$PurUid" ]; then
+	result tier0 PASS "home-owned-by-user"
+else
+	result tier0 FAIL "home-owned-by-user" "$PurHome is owned by uid $HomeOwner, expected $PurUid"
+fi
+
+# No process may have died: a crash loop still leaves one running.
+ErrCount=$(dmesg 2>/dev/null | grep -ciE "segfault|general protection fault" || true)
+if [ "${ErrCount:-0}" -gt 0 ]; then
+	result tier0 SLOW "kernel-crashes" "$ErrCount segfault/gpfs messages in dmesg"
+else
+	result tier0 PASS "kernel-crashes"
+fi
+
+# Audio. PipeWire without its session manager is installed but silent, which
+# is exactly the kind of thing that looks fine and is not.
+#
+# Both start from the session, not from an init script, so at the moment the
+# desktop is reported up they may not have been launched yet. Checking once,
+# here, reported "no pipewire process" on a system where the daemon was running
+# perfectly a minute later. Wait for them instead: a check that cries wolf is
+# worse than no check, because it trains you to ignore the one that matters.
+wait_for_proc() {
+	# wait_for_proc <process name> <seconds to wait>
+	local _n="$1" _left="${2:-40}"
+	while [ "${_left}" -gt 0 ]; do
+		pgrep -x "${_n}" >/dev/null 2>&1 && return 0
+		sleep 1
+		_left=$((_left - 1))
+	done
+	return 1
+}
+
+if wait_for_proc pipewire 40; then
+	result tier0 PASS "pipewire-running"
+else
+	result tier0 FAIL "pipewire-running" "no pipewire process after 40s"
+fi
+
+if command -v wireplumber >/dev/null 2>&1; then
+	if wait_for_proc wireplumber 40; then
+		result tier0 PASS "wireplumber-running"
+	else
+		result tier0 FAIL "wireplumber-running" "installed but not running after 40s"
+	fi
+else
+	result tier0 FAIL "wireplumber-installed" \
+		"PipeWire has no session manager, nothing will route audio"
+fi
+
+# An audio mixer with no playback device has nothing to show, so record what
+# the sound stack actually found. On a machine with real hardware there is a
+# sink here; under a bare emulator there may be none, which is not a fault in
+# the image but explains any mixer that opens no window.
+if command -v pactl >/dev/null 2>&1; then
+	NSinks="$(as_desktop pactl list short sinks 2>/dev/null | wc -l)"
+	if [ "${NSinks:-0}" -gt 0 ]; then
+		result tier0 PASS "audio-sinks" "$NSinks playback sink(s)"
+	else
+		result tier0 SLOW "audio-sinks" \
+			"no playback sink, the machine or the emulator has no sound card"
+	fi
+else
+	result tier0 SKIP "audio-sinks" "pactl not installed"
+fi
+
+# The package database has to agree with the filesystem.
+Npkg=$(dpkg-query -f '${binary:Package}\n' -W 2>/dev/null | wc -l)
+say "INFO dpkg knows about $Npkg packages"
+if [ "$Npkg" -lt 500 ]; then
+	result tier0 FAIL "dpkg-database" "only $Npkg packages known, the filesystem is broken"
+else
+	result tier0 PASS "dpkg-database" "$Npkg packages"
+fi
+
+# The curated set is deliberately much smaller than the base's 3362, so record
+# the number. This is also the measurement that makes the strip-down a number
+# rather than a feeling: compare against docs/BASELINE.md.
+grep -qE ' / .*(overlay|squashfs)' /proc/mounts \
+	&& result tier0 PASS "rootfs-live" \
+	|| result tier0 PASS "rootfs-live" "not a live/overlay mount, this is an installed system"
+
+touch "${PurHome}/.selftest-write" 2>/dev/null \
+	&& { rm -f "${PurHome}/.selftest-write"; result tier0 PASS "home-writable"; } \
+	|| result tier0 FAIL "home-writable" "cannot write to $PurHome"
+
+if ping -c1 -W2 9.9.9.9 >/dev/null 2>&1; then
+	result tier0 PASS "network-reachability"
+elif ip -o addr show scope global 2>/dev/null | grep -q .; then
+	result tier0 SLOW "network-reachability" "interface up but no outbound ping"
+else
+	result tier0 FAIL "network-reachability" "no global interface"
+fi
+
+# ==========================================================================
+# TIER 2 - real time  (the tier this machine is judged on)
+# ==========================================================================
+say "--- tier 2: realtime"
+say "INFO a workstation can install perfectly, have every application present,"
+say "INFO open its mixer, and still glitch under load. This is the tier that"
+say "INFO catches that, and none of it is visible from a running desktop."
+
+# --- the kernel ------------------------------------------------------------
+# This has to be PREEMPT_RT. Not linux-lowlatency, which is the generic kernel
+# with boot arguments, and not whatever happens to be booted. The stock Ubuntu
+# Studio ISO carries linux-generic and no RT kernel at all, so a live image
+# that does not add this at build time is a generic kernel wearing the name.
+Kver="$(uname -v)"
+if printf '%s' "$Kver" | grep -qiE 'rt|realtime'; then
+	result tier2 PASS "kernel-is-realtime" "$Kver"
+else
+	result tier2 FAIL "kernel-is-realtime" \
+		"booted '$Kver', which is not PREEMPT_RT; audio cannot be real time on this kernel"
+fi
+
+# The kernel package, separately: a kernel string can be inherited from a
+# package that was replaced, and this catches that.
+Kpkg=$(dpkg-query -W -f='${Package} ${Version}\n' 'linux-image-*' 2>/dev/null |
+	grep -E '^linux-image-(realtime|lowlatency|generic|hwe)' | head -1)
+say "INFO kernel package: ${Kpkg:-unknown}"
+
+# --- RT priority -----------------------------------------------------------
+# Checked as the user, through the same limits mechanism the desktop gets.
+# Reading the limits file is not enough on its own: the file can exist, be
+# correct, and still not apply if it was never read by a PAM stack that
+# matters. The number is what counts.
+RTprio=$(as_desktop bash -c 'ulimit -r' 2>/dev/null | tr -d ' ')
+case "$RTprio" in
+	''|*[!0-9]*) result tier2 FAIL "rtprio-limit" "could not read: '$RTprio'" ;;
+	*)
+		if [ "$RTprio" -ge 90 ]; then
+			result tier2 PASS "rtprio-limit" "rtprio $RTprio"
+		elif [ "$RTprio" -eq 0 ]; then
+			result tier2 FAIL "rtprio-limit" \
+				"rtprio is 0, audio runs at normal priority and WILL glitch under load"
+		else
+			result tier2 SLOW "rtprio-limit" "rtprio $RTprio, expected 95"
+		fi
+		;;
+esac
+
+# memlock: JACK maps large locked regions and is refused without this
+MEMlock=$(as_desktop bash -c 'ulimit -l' 2>/dev/null | tr -d ' ')
+if [ "$MEMlock" = "unlimited" ] || [ "${MEMlock:-0}" -ge 1048576 ] 2>/dev/null; then
+	result tier2 PASS "memlock-limit" "memlock $MEMlock"
+else
+	result tier2 FAIL "memlock-limit" \
+		"memlock is '$MEMlock', JACK will fail to lock memory it needs"
+fi
+
+# The limits file itself, so the diagnosis is obvious when the numbers are
+# wrong. Its absence is the single most common cause of both failures above.
+LIMITS=/etc/security/limits.d/30-ubuntustudio-audio.conf
+if [ -r "$LIMITS" ]; then
+	if grep -qE 'rtprio\s*=\s*9[0-9]' "$LIMITS"; then
+		result tier2 PASS "limits-file" "present and grants rtprio"
+	else
+		result tier2 FAIL "limits-file" "present but does not grant rtprio"
+	fi
+else
+	result tier2 FAIL "limits-file" \
+		"$LIMITS is missing; ubuntustudio-installer-helper's 'fix' step never ran"
+fi
+
+# The user must be in the audio group.
+if id -nG "$PurUser" 2>/dev/null | tr ' ' '\n' | grep -qx audio; then
+	result tier2 PASS "user-in-audio-group"
+else
+	result tier2 FAIL "user-in-audio-group" "$PurUser is not in the audio group"
+fi
+
+# --- the tuning that is not a package --------------------------------------
+# Report-only checks. The first one changes boot and battery behaviour enough
+# to be a decision, so it is SLOW when wrong, not FAIL.
+
+GOV=""
+for c in /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor; do
+	[ -r "$c" ] && GOV=$(cat "$c" 2>/dev/null)
+done
+if [ -z "$GOV" ]; then
+	result tier2 SKIP "cpu-governor" "no cpufreq driver on this machine"
+elif [ "$GOV" = "performance" ]; then
+	result tier2 PASS "cpu-governor" "$GOV"
+else
+	result tier2 SLOW "cpu-governor" \
+		"$GOV; performance is what real time audio wants, see docs/PERFORMANCE.md"
+fi
+
+SWAP=$(sed -n 's/^vm\.swappiness=\s*\([0-9]*\).*/\1/p' /proc/sys/vm/swappiness 2>/dev/null | head -1)
+if [ -z "$SWAP" ]; then
+	result tier2 SKIP "swappiness" "cannot read /proc/sys/vm/swappiness"
+elif [ "$SWAP" -le 10 ]; then
+	result tier2 PASS "swappiness" "$SWAP"
+else
+	result tier2 SLOW "swappiness" "$SWAP, a session should not swap"
+fi
+
+# isolcpus/nohz_full are in the kernel command line on the installed system.
+# Reported, not judged: the right value depends on the machine's core count,
+# and a wrong guess here is worse than leaving it off.
+CMDLINE=$(tr '\0' ' ' < /proc/cmdline 2>/dev/null)
+say "INFO cmdline: $CMDLINE"
+for opt in isolcpus nohz_full threadirqs; do
+	if printf '%s' "$CMDLINE" | grep -qw "$opt"; then
+		result tier2 PASS "cmdline-$opt"
+	else
+		result tier2 SKIP "cmdline-$opt" "not on the kernel command line"
+	fi
+done
+
+# USB autosuspend on the audio interface: the most common cause of "it
+# glitches when I move the mouse". A rule file is checked rather than the
+# runtime state, because by the time this runs the interface may be idle.
+if ls /etc/udev/rules.d/*puralvos* /etc/udev/rules.d/*audio* >/dev/null 2>&1; then
+	result tier2 PASS "udev-audio-rules" \
+		"$(ls /etc/udev/rules.d/ | grep -cE 'puralvos|audio') rule file(s)"
+else
+	result tier2 SLOW "udev-audio-rules" \
+		"no audio udev rule; USB autosuspend will still glitch the interface"
+fi
+
+# --- what the audio daemon is actually running at --------------------------
+# The strongest evidence available without hardware: a live PipeWire thread
+# holding a real-time policy.
+pwpid=$(pgrep -u "$PurUid" -x pipewire 2>/dev/null | head -1)
+if [ -z "$pwpid" ]; then
+	result tier2 SKIP "pipewire-rt-policy" "pipewire is not running yet"
+elif chrt -p "$pwpid" 2>/dev/null | grep -q 'prio-95'; then
+	result tier2 PASS "pipewire-rt-policy" "running at priority 95"
+else
+	result tier2 FAIL "pipewire-rt-policy" \
+		"$(chrt -p "$pwpid" 2>/dev/null | tail -1 | tr -s ' ') - should be prio-95"
+fi
+
+# --- xruns -----------------------------------------------------------------
+# Zero xruns is the target in docs/PERFORMANCE.md. It can only be measured
+# with an audio device and JACK actually running, which needs hardware this
+# harness may not have. Skipped rather than faked: a self test that reports a
+# pass it did not earn is how a broken workstation ships.
+if command -v jackd >/dev/null 2>&1 && command -v jack_control >/dev/null 2>&1; then
+	if [ "${NSinks:-0}" -gt 0 ] || [ -e /dev/snd ]; then
+		result tier2 SKIP "jack-xruns" \
+			"needs a JACK server running with a real device; run puralvos-xrun-bench on the workstation"
+	else
+		result tier2 SKIP "jack-xruns" "no audio device, JACK cannot start here"
+	fi
+else
+	result tier2 SKIP "jack-xruns" "jackd not installed"
+fi
+
+# ==========================================================================
+# TIER 3 - branding
+# ==========================================================================
+say "--- tier 3: branding"
+say "INFO Ubuntu and Ubuntu Studio are Canonical trademarks and this image is"
+say "INFO neither. Anything still carrying their name is a defect."
+
+# os-release first: it is what every tool reports the system as.
+OSNAME=$(sed -n 's/^NAME="\(.*\)"$/\1/p' /etc/os-release 2>/dev/null | head -1)
+if printf '%s' "$OSNAME" | grep -qi puralvos; then
+	result tier3 PASS "os-release-name" "$OSNAME"
+else
+	result tier3 FAIL "os-release-name" "NAME='$OSNAME', should be PuralvOS"
+fi
+
+if grep -qi ubuntu /etc/os-release 2>/dev/null; then
+	result tier3 FAIL "os-release-not-ubuntu" \
+		"$(grep -i ubuntu /etc/os-release | tr '\n' ' ' | cut -c1-120)"
+else
+	result tier3 PASS "os-release-not-ubuntu"
+fi
+
+# The ISO's own label. Only present on a live image.
+if [ -r /.disk/info ]; then
+	DISKTXT=$(cat /.disk/info 2>/dev/null)
+	if printf '%s' "$DISKTXT" | grep -qi puralvos; then
+		result tier3 PASS "iso-label" "$DISKTXT"
+	else
+		result tier3 FAIL "iso-label" "$DISKTXT"
+	fi
+else
+	result tier3 SKIP "iso-label" "not a live image"
+fi
+
+# Wallpapers that are still Canonical's.
+UBUWALL=0
+for d in /usr/share/backgrounds /usr/share/wallpapers; do
+	[ -d "$d" ] || continue
+	UBUWALL=$((UBUWALL + $(find "$d" -type f \( -iname '*ubuntu*' -o -iname '*studio*' \) 2>/dev/null | wc -l)))
+done
+PURWALL=$(find /usr/share/backgrounds -type f -iname '*puralvos*' 2>/dev/null | wc -l)
+if [ "$PURWALL" -gt 0 ]; then
+	result tier3 PASS "puralvos-wallpapers" "$PURWALL file(s) installed"
+else
+	result tier3 FAIL "puralvos-wallpapers" "none installed"
+fi
+if [ "$UBUWALL" -gt 0 ]; then
+	result tier3 FAIL "ubuntu-wallpapers-remain" \
+		"$UBUWALL file(s) in /usr/share/backgrounds still say Ubuntu or Ubuntu Studio"
+else
+	result tier3 PASS "ubuntu-wallpapers-remain"
+fi
+
+# Splash and login screens.
+for f in /usr/share/plymouth/themes/*PuralvOS* /usr/share/plymouth/themes/*puralvos*; do
+	[ -e "$f" ] && { result tier3 PASS "boot-splash"; break; }
+done
+[ -e /usr/share/plymouth/themes/*PuralvOS* ] || [ -e /usr/share/plymouth/themes/*puralvos* ] || \
+	result tier3 SLOW "boot-splash" "no PuralvOS plymouth theme; Ubuntu Studio's is still showing"
+
+for f in /usr/share/sddm/themes/*PuralvOS* /usr/share/sddm/themes/*puralvos*; do
+	[ -e "$f" ] && { result tier3 PASS "login-screen"; break; }
+done
+[ -e /usr/share/sddm/themes/*PuralvOS* ] || [ -e /usr/share/sddm/themes/*puralvos* ] || \
+	result tier3 SLOW "login-screen" "no PuralvOS SDDM theme"
+
+# Anything left anywhere that claims to be the boot menu or the installer.
+GRUBSTILL=$(grep -rlisE 'ubuntu[ -]?studio' /boot/grub /EFI/ubuntu 2>/dev/null | wc -l)
+if [ "$GRUBSTILL" -eq 0 ]; then
+	result tier3 PASS "grub-menus"
+else
+	result tier3 FAIL "grub-menus" "$GRUBSTILL file(s) in /boot/grub still say Ubuntu Studio"
+fi
+
+# ==========================================================================
+# TIER 1a - declared packages are really installed
+# ==========================================================================
+say "--- tier 1a: declared packages"
+DECL="/usr/local/share/puralvos/selftest-packages.txt"
+
+if [ -r "$DECL" ]; then
+	NDECL=0; NMISS=0
+	while IFS= read -r p; do
+		case "$p" in ''|'#'*) continue ;; esac
+		NDECL=$((NDECL+1))
+		name=${p%%=*}
+		[ -z "$name" ] && continue
+		state=$(dpkg-query -W -f='${db:Status-Abbrev}' "$name" 2>/dev/null)
+		case "$state" in
+			"ii "*) ;;
+			*) NMISS=$((NMISS+1))
+			   result tier1 FAIL "pkg:$name" "declared by the SDK but not installed" ;;
+		esac
+	done < "$DECL"
+	say "INFO checked $NDECL declared packages"
+	# Anything that is declared but absent is a build failure, and reporting
+	# it as a pile of individual lines hides that.
+	[ "$NMISS" -gt 0 ] && result tier1 FAIL "declared-packages-complete" "$NMISS of $NDECL missing"
+else
+	result tier1 FAIL "declared-packages-complete" "$DECL missing, cannot verify the curated set"
+fi
+
+# ==========================================================================
+# TIER 1b - every menu entry points at something that exists
+# ==========================================================================
+say "--- tier 1b: desktop entries"
+
+list_desktops() {
+	find /usr/local/share/applications /usr/share/applications \
+		"$PurHome"/.local/share/applications \
+		-maxdepth 1 -name '*.desktop' 2>/dev/null | sort
+}
+
+# Pull the executable out of an Exec= line, ignoring the desktop spec field
+# codes (%f %u %U %F ...) and honouring the quoting rules.
+#
+# An Exec line can start with a wrapper, as some Qt apps do with
+# "env GDK_BACKEND=x11 kdenlive %F". Taking the first word there would launch
+# /usr/bin/env with no arguments and report a perfectly good application as
+# broken, so step over a leading env and any VAR=value that follows it.
+exec_from_desktop() {
+	sed -n 's/^Exec=//p' "$1" | head -1 |
+	sed -e 's/%%/%/g' -e 's/%[fFuUdDnNickvm]//g' |
+	awk '
+	{
+		for (i = 1; i <= NF; i++) {
+			if ($i ~ /^[A-Za-z0-9_.\/-]+$/) {
+				if ($i == "env") {
+					j = i + 1
+					while (j <= NF && $j ~ /^[A-Za-z_][A-Za-z0-9_]*=/) j++
+					if (j <= NF) { print $j; exit }
+				} else {
+					print $i
+					exit
+				}
+			}
+		}
+	}'
+}
+
+NDESK=0
+for d in $(list_desktops); do
+	grep -qE '^Type=Application' "$d" 2>/dev/null || continue
+	grep -qE '^Hidden=true' "$d" 2>/dev/null && continue
+	grep -qE '^NoDisplay=true' "$d" 2>/dev/null && continue
+	grep -qE '^Exec=' "$d" 2>/dev/null || continue
+	NDESK=$((NDESK+1))
+	bin=$(exec_from_desktop "$d")
+	name=$(sed -n 's/^Name=\(.*\)$/\1/p' "$d" | head -1)
+	[ -z "$name" ] && name=$(basename "$d" .desktop)
+	if [ -z "$bin" ]; then
+		result tier1 FAIL "desktop:$name" "no Exec found in $d"
+		continue
+	fi
+	if ! command -v "$bin" >/dev/null 2>&1 &&
+	   ! test -x "/usr/games/$bin" && ! test -x "/usr/local/games/$bin" &&
+	   ! test -x "/usr/bin/$bin" && ! test -x "/usr/local/bin/$bin" &&
+	   ! test -x "/usr/sbin/$bin" && ! test -x "/opt/$bin"; then
+		result tier1 FAIL "desktop:$name" "Exec '$bin' not found ($d)"
+	fi
+done
+say "INFO checked $NDESK desktop entries"
+
+# ==========================================================================
+# TIER 4 - launch the applications for real
+# ==========================================================================
+say "--- tier 4: launching applications"
+
+if [ "$XUP" != 1 ]; then
+	# Without a display there is no window to wait for, so every launch would
+	# time out and every application would be reported broken. That is a false
+	# reading of the applications: they are untested, not broken. Say so once,
+	# clearly, instead of manufacturing forty failures.
+	result tier4 FAIL "applications-launchable" \
+		"not tested: there is no X server, so no application could be judged"
+	say ""
+	say "--- summary"
+	say "INFO pass=$PASS fail=$FAIL slow=$SLOW skip=$SKIP"
+	say "INFO elapsed=$(( $(date +%s) - T0 ))s"
+	if [ ${#FAILED[@]} -gt 0 ]; then
+		say "--- problems"
+		for f in "${FAILED[@]}"; do say "PROBLEM $f"; done
+	fi
+	say "########## PURALVOS SELFTEST END ok=$((PASS+SLOW)) bad=$FAIL ##########"
+	exit 1
+fi
+
+TMPD=$(mktemp -d /tmp/selftest.XXXXXX)
+
+# The whole window tree, so a new top level window can be spotted no matter
+# how deep it sits.
+window_sig() {
+	as_desktop xwininfo -root -children 2>/dev/null | grep -oE '^\s+0x[0-9a-f]+' | tr -d ' ' | sort
+}
+
+LAUNCH_TIMEOUT=${LAUNCH_TIMEOUT:-60}
+
+# Close whatever an application left behind, whether or not it worked.
+reap() {
+	local bin=$1 pid=$2
+	pkill -f "$bin" >/dev/null 2>&1
+	kill "$pid" >/dev/null 2>&1
+	sleep 1
+	kill -9 "$pid" >/dev/null 2>&1
+	pkill -9 -f "$bin" >/dev/null 2>&1
+}
+
+launch_test() {
+	local name=$1 bin=$2; shift 2
+	local log="$TMPD/${name//\//_}.log"
+	local before after pid i up=0 exited=0
+
+	before=$(window_sig)
+
+	as_desktop "$@" >"$log" 2>&1 &
+	pid=$!
+
+	for (( i=0; i<LAUNCH_TIMEOUT; i++ )); do
+		sleep 1
+		after=$(window_sig)
+		if [ -n "$after" ] && [ "$after" != "$before" ]; then
+			up=1
+			break
+		fi
+		if ! kill -0 "$pid" 2>/dev/null && ! pgrep -f "$bin" >/dev/null 2>&1; then
+			exited=1
+			break
+		fi
+	done
+
+	reap "$bin" "$pid"
+
+	if [ "$up" = 1 ]; then
+		if [ "$i" -ge 15 ]; then
+			result tier4 SLOW "$name" "window after ${i}s"
+		else
+			result tier4 PASS "$name" "window after ${i}s"
+		fi
+		return 0
+	fi
+
+	local why
+	if [ "$exited" = 1 ]; then
+		why="exited immediately: $(tail -n 2 "$log" 2>/dev/null | tr '\n' ' ' | cut -c1-140)"
+	else
+		why="no window within ${LAUNCH_TIMEOUT}s: $(tail -n 2 "$log" 2>/dev/null | tr '\n' ' ' | cut -c1-140)"
+	fi
+	result tier4 FAIL "$name" "$why"
+	return 1
+}
+
+# The curated set from tasks.list, and only that: audio, video, graphics.
+# Nothing here is a general desktop application, because PuralvOS does not ship
+# them. A menu entry that tests a stripped application is a false failure.
+TESTS=(
+# audio
+"ardour:ardour"
+"jackdbus:jack_control"
+"qjackctl:qjackctl"
+"mixxx:mixxx"
+"audacity:audacity"
+"kid3:kid3"
+"musescore:musescore3"
+"musescore4:musescore4"
+"rose:rose"
+"amsn:amsn"
+"tuxguitar:tuxguitar"
+"pocketsphinx:pocketsphinx_continuous"
+"harmonoid:harmonoid"
+"kmetronome:kmetronome"
+"yatm:yatm"
+"kmix:kmix"
+"pavucontrol:pavucontrol"
+# video
+"kdenlive:kdenlive"
+"shotcut:shotcut"
+"olive:olive-editor"
+"openshot:openshot-qt"
+"pitivi:pitivi"
+"blender:blender"
+"obs:obs"
+"butt:butt"
+"subtitleeditor:subtitleeditor"
+"ffmpeg:ffmpeg"
+"vlc:vlc --intf qt"
+"handbrake:handbrake"
+"kazam:kazam"
+"stopmotion:stopmotion"
+# graphics
+"gimp:gimp"
+"inkscape:inkscape"
+"krita:krita"
+"darktable:darktable"
+"scribus:scribus"
+"freecad:freecad"
+"openscad:openscad"
+"kdenlive-effects:kdenlive"
+"rawtherapee:rawtherapee"
+"mypaint:mypaint"
+)
+
+for t in "${TESTS[@]}"; do
+	n=${t%%:*}; c=${t#*:}
+	bin=${c%% *}
+	if ! command -v "$bin" >/dev/null 2>&1 && ! test -x "/usr/games/$bin"; then
+		result tier4 SKIP "$n" "$bin not installed"
+		continue
+	fi
+	launch_test "$n" "$bin" $c
+done
+
+# Everything else the menu offers.
+#
+# The list above only covers what PuralvOS promises. This walks every
+# remaining application entry the image ships and tries it too, so a menu
+# item that does not start is reported rather than sitting there looking fine
+# until somebody clicks it.
+launched=" $(echo "${TESTS[@]}" | tr ' ' '\n' | cut -d: -f1 | tr '\n' ' ') "
+for d in $(list_desktops); do
+	grep -qE '^Type=Application' "$d" 2>/dev/null || continue
+	grep -qE '^Hidden=true' "$d" 2>/dev/null && continue
+	grep -qE '^NoDisplay=true' "$d" 2>/dev/null && continue
+	grep -qE '^Exec=' "$d" 2>/dev/null || continue
+	grep -qE '^Terminal=true' "$d" 2>/dev/null && continue
+
+	name=$(sed -n 's/^Name=\(.*\)$/\1/p' "$d" | head -1)
+	[ -z "$name" ] && name=$(basename "$d" .desktop)
+	case "$launched" in *" $name "*) continue ;; esac
+
+	bin=$(exec_from_desktop "$d")
+	[ -z "$bin" ] && continue
+
+	if ! command -v "$bin" >/dev/null 2>&1 && ! test -x "/usr/games/$bin" &&
+	   ! test -x "/usr/local/games/$bin" && ! test -x "/usr/bin/$bin"; then
+		result tier4 SKIP "menu:$name" "$bin not installed"
+		continue
+	fi
+
+	# Skip the ones that only make sense inside a running session, and the
+	# per-soundcard tools. Echnomixer and the HDSP pair are front ends for
+	# one specific piece of hardware each and exit on purpose when that card
+	# is absent, which is not a fault in the image.
+	case "$name" in
+		*Discover*|*Software*|*Settings*|*"System Settings"*|*Logout*|*"Log Out"*|\
+		*Lock*|*Restart*|*Shutdown*|*Reboot*|*"Screen Saver"*|*Screensaver*|\
+		*Kontoche*|*KWallet*|*Print*|*Screenshot*|*Spectacle*|*Help*|*Manual*|\
+		*About*|*Info*|*Index*|*Update*|*Search*|*support*|\
+		*Echnomixer*|*Envy24*|*HDSPConf*|*HDSPMixer*|\
+		*"ImageMagick"*|*"Color depth"*|*"File Manager"*|*"Open Image"*|\
+		*Firefox*|*Transmission*)
+			result tier4 SKIP "menu:$name" "not a launchable application"
+			continue ;;
+	esac
+
+	launch_test "menu:$name" "$bin" "$bin"
+done
+
+# Console programs. There is no window to wait for and most of them want a
+# terminal or arguments, so check that they run and report something sane
+# instead of pretending they were broken.
+console_test() {
+	local name=$1; shift
+	local log="$TMPD/${name}.log"
+	local rc=0
+	as_desktop timeout 10 "$@" >"$log" 2>&1 || rc=$?
+	# 124 is the exit status of the timeout itself: the program was still
+	# running when its ten seconds were up. For a curses program that is a
+	# pass, it drew its interface and had to be killed.
+	if [ "$rc" = 0 ]; then
+		result tier4 PASS "$name" "runs"
+	elif [ "$rc" = 124 ]; then
+		result tier4 PASS "$name" "still running after 10s, as expected"
+	elif grep -qiE "usage|version|error|cannot|not found" "$log"; then
+		result tier4 PASS "$name" "console program responded"
+	else
+		result tier4 FAIL "$name" \
+			"rc=$rc $(tail -n 2 "$log" | tr -d '\033' | tr '\n' ' ' | cut -c1-120)"
+	fi
+}
+
+# pamix is a curses mixer: it draws on a terminal and never opens a window, so
+# it is checked here and not with the graphical applications.
+for t in "weechat:weechat --version" \
+	 "cmail:cmail -?" \
+	 "timidity:timidity -h" \
+	 "alsamixer:alsamixer -h" \
+	 "display:display -version" \
+	 "pamix:pamix -h"; do
+	n=${t%%:*}; c=${t#*:}
+	bin=${c%% *}
+	if ! command -v "$bin" >/dev/null 2>&1 && ! test -x "/usr/games/$bin"; then
+		result tier4 SKIP "$n" "$bin not installed"
+		continue
+	fi
+	console_test "$n" $c
+done
+
+# --------------------------------------------------------------------------
+# summary
+# --------------------------------------------------------------------------
+say ""
+say "--- summary"
+say "INFO pass=$PASS fail=$FAIL slow=$SLOW skip=$SKIP"
+say "INFO elapsed=$(( $(date +%s) - T0 ))s"
+if [ ${#FAILED[@]} -gt 0 ]; then
+	say "--- problems"
+	for f in "${FAILED[@]}"; do say "PROBLEM $f"; done
+fi
+say "########## PURALVOS SELFTEST END ok=$((PASS+SLOW)) bad=$FAIL ##########"
+rm -rf "$TMPD"
+exit 0

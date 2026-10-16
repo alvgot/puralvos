@@ -37,8 +37,7 @@ this is being written from scratch:
 ```
 
 Note the live filesystem is layered rather than a single `filesystem.squashfs`:
-that changed in 24.04 and is the first thing to trip up anyone rebuilding this
-the way dyneV does it.
+that changed in 24.04 and is the first thing to trip up anyone rebuilding it.
 
 ## The decision: how does the installed system get *our* package set
 
@@ -108,17 +107,17 @@ commitment about how the project grows, not a technical detail.
 
 ## Testing
 
-The dyneV harness is reusable and should be copied rather than reinvented:
-
 ```
 scripts/kvmtest.sh      boot an ISO headless, wait for the desktop
 scripts/kvmconsole.sh   serial console into the guest
+scripts/qmp-key.py      send a keystroke to a guest that is sitting in a menu
+scripts/puralvos-selftest   verify a booted image from the inside
 ```
 
-`dyne-selftest` is worth porting too. Its most useful property is that it
+`puralvos-selftest` is the important one. Its most useful property is that it
 launches applications **as the real user in the real session** and waits for a
 window, which is the only way to catch an application that installs correctly
-and starts to nothing. Two lessons from that file travel with it:
+and starts to nothing. Two lessons shape it:
 
 - an application must be given time to start before you call it broken
 - a version probe exiting non-zero without `DISPLAY` is not evidence of

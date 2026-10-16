@@ -52,7 +52,7 @@ So a live PuralvOS that does not add the kernel itself is a generic kernel. If
 the promise is a real time workstation, the live image needs the kernel added at
 build time, not just the installed one.
 
-### Firmware: the opposite of dyneV
+### Firmware: what the non-free decision actually buys
 
 18 `linux-firmware-*` packages, including:
 
@@ -67,11 +67,13 @@ linux-firmware-qualcomm-wireless
 ```
 
 This is the entire point of PuralvOS shipping proprietary software, and it shows
-up immediately: **the wireless adapter that has no firmware at all in dyneV
-works here.** dyneV is main-only and carries three firmware packages; this
-carries eighteen, and one of them is exactly what that machine was missing.
+up immediately. Eighteen firmware packages are carried, and one of them,
+`linux-firmware-intel-wireless`, is exactly the firmware a specific laptop's
+Intel 8260 wireless adapter needs in order to have a working network at all.
 
-Recorded so the trade-off stays visible rather than becoming folklore.
+A main-only image is a tidier idea and a worse workstation: it is missing the
+file that makes the wifi turn on. Recorded here so the trade-off stays a
+decision instead of turning into folklore.
 
 ### Tasks installed
 
@@ -121,9 +123,11 @@ limits file and the group membership, not by assuming a package pulled it in.
 - [ ] measure the image size, so the saving from stripping is a number and not
       a feeling
 
-The dyneV self test is the tool for the second of those and is worth porting.
-Its two hard-won lessons are recorded at the bottom of
-[ARCHITECTURE.md](ARCHITECTURE.md).
+`tools/puralvos-selftest` is the tool for the second of those, and it should be
+run against this base as well as against PuralvOS. Two rules it follows, both
+learned the hard way, are worth keeping: a check that cries wolf is worse than
+no check because it trains you to ignore the one that matters, and a self test
+that reports a pass it did not earn is how a broken image ships.
 
 ## Live image layout, for anyone rebuilding it
 
@@ -138,5 +142,5 @@ Ubuntu 24.04 changed this and it is the first thing to trip people up:
 
 There is no `casper/filesystem.squashfs` any more. A live image is the base
 layer plus the standard layer plus the live layer, and overlays go on top of
-that. Anything that assumes a single squashfs — which is most pre-24.04 tooling,
-including the dyneV build — will not work here.
+that. Anything that assumes a single squashfs — which is most tooling written
+before 24.04 — will not work here.

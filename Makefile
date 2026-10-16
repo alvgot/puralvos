@@ -10,7 +10,7 @@ BASE_URL := https://cdimage.ubuntu.com/ubuntustudio/releases/resolute/release/ub
 SCRIPTS  := scripts
 TOOLS   := tools
 
-.PHONY: help base verify-base kernel brand test-booth
+.PHONY: help base verify-base kernel brand packages selftest test-booth
 help:
 	@echo "PuralvOS"
 	@grep -E '^[a-z-]+:.*?##' $(MAKEFILE_LIST) | sed 's/:.*##/\t/' | expand -t18
@@ -29,6 +29,17 @@ kernel: ## ask apt which real time kernel to use
 
 brand: ## generate the identity assets from brand/tokens.json
 	python3 $(TOOLS)/make-brand.py
+
+packages: ## generate the package declaration from tasks.list
+	python3 $(TOOLS)/make-package-declaration.py -o $(BASE_DIR)/puralvos/selftest-packages.txt
+
+selftest: ## run the self test in a booted image (not on this machine)
+	@echo "puralvos-selftest runs INSIDE a booted PuralvOS image, not here."
+	@echo "Pass puralvos.selftest=1 on the kernel command line, or run it by hand:"
+	@echo "  /usr/local/bin/puralvos-selftest"
+	@echo
+	@echo "Smoke test only, anywhere:"
+	@echo "  XWAIT=2 tools/puralvos-selftest   # XWAIT=2 skips the desktop wait"
 
 test-booth: ## boot the base under KVM and wait for the desktop
 	$(SCRIPTS)/kvmtest.sh $(BASE_ISO) puralvos-base 600 60

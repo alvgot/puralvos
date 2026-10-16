@@ -1,5 +1,5 @@
 #!/bin/bash
-# Interactive KVM session for a dyne:bolic live image.
+# Interactive KVM session for a PuralvOS image.
 #
 # Boots the ISO under KVM with the serial console on a UNIX socket, so the
 # guest can actually be talked to from the host. Used together with the

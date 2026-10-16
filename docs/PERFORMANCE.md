@@ -137,22 +137,40 @@ None of these replace the RT configuration above. They make it easier to hit.
 
 ## How this gets checked
 
-`tools/puralvos-selftest`, ported from the dyneV build's `dyne-selftest`.
-
-It has to be able to answer, on a real installed system:
+`tools/puralvos-selftest`, which runs **inside** a booted PuralvOS image and
+answers, on a real system:
 
 - is the kernel actually PREEMPT_RT
-- is RT priority actually granted
+- is RT priority actually granted, as the user, through the real limits path
+- is memlock actually unlimited
+- does the limits file exist and grant rtprio
 - is the user in `audio`
-- does the limits file exist and say the right thing
-- does JACK start and report zero xruns
-- which of the curated applications launch
+- is PipeWire's own thread at priority 95
+- what is the CPU governor, the swappiness, the kernel command line
+- are there still Ubuntu's wallpapers, splash and login screen on disk
 
-That last one is the reason the base was booted and measured first. If Ardour
-misbehaves after stripping and the base was never tested, a day disappears
-blaming work that did not cause it.
+Tiers 0, 1 and 4 are the ordinary ones. **Tier 2 is the one that matters here**:
+it is the only part that can catch a machine which looks perfect and cannot do
+real time audio, which is exactly the failure the whole design is about.
+
+Run it on the base as well as on PuralvOS. If Ardour misbehaves after
+stripping and the base was never measured, a day disappears blaming work that
+did not cause it.
+
+### Two things it will not do
+
+**It will not report an xrun count it did not earn.** `jack-xruns` needs a
+JACK server on a real device. Without one it SKIPs with the reason. A self
+test that reports a pass it did not earn is how a broken workstation ships,
+and that is worse than a gap in the report.
+
+**It will not report 40 broken applications because there is no display.**
+Without an X server every launch would time out, and every application would
+look broken when the truth is that they are untested. It says that once and
+stops.
 
 ## Not yet done
 
-- [ ] the selftest tool
 - [ ] boot-time baseline measured on the base, so stripping has something to beat
+- [ ] `puralvos-xrun-bench`, the tool that actually measures xruns on real hardware
+- [ ] the branding checks turned on for real, once the image exists to check

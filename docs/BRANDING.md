@@ -80,10 +80,10 @@ Pur + Alv. A **P** in the audio accent and an **A** in the video accent, with
 the crossbar in graphics. Three accents, one per discipline, used consistently
 everywhere.
 
-No orange, and no spectrum. Orange is Ubuntu's trademark, and a spectrum-based
-identity would read as a dyne:bolic derivative, since that is exactly what
-dyne:bolic's logo is. Neither is acceptable for a project whose name is
-`puralvos` in a repo owned by `alvgot`.
+No orange, because that is Ubuntu's trademark and this image is not Ubuntu's.
+No spectrum either: a spectrum is the obvious choice for a three-discipline
+logo and it is exactly the mark the Freesh-derived audio lineage already uses,
+so an identity built on it would read as somebody else's.
 
 It is also two people, on purpose: this is a workstation built for two specific
 users, not a product.
