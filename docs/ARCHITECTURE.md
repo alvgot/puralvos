@@ -41,7 +41,11 @@ that changed in 24.04 and is the first thing to trip up anyone rebuilding it.
 
 ## The decision: how does the installed system get *our* package set
 
-**Decided: option 1, preseed ubiquity. Use Ubuntu's own tools.**
+**Decided: option 1, preseed ubiquity. Use Ubuntu's own tools.** The rule that
+governs the whole build is in [STANDARD-TOOLS.md](STANDARD-TOOLS.md):
+`live-build` for live images, `debootstrap`/`mmdebstrap` for a root filesystem,
+`plymouth-set-default-theme` for the splash, `grub-mkconfig` for the menu,
+`xorriso` for the ISO. None of these are ours to reimplement.
 
 PuralvOS is built on Ubuntu, so it is built with Ubuntu's tools rather than
 with a private build system. That is the decision, and it settles the

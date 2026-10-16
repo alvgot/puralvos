@@ -80,6 +80,7 @@ tools/puralvos-selftest    verify a booted image from the inside
 tools/kernel-select.py     find the real time kernel by asking apt
 tools/upgrade-curated.sh   upgrade our packages, leave yours alone
 docs/ARCHITECTURE.md       how the images are built
+docs/STANDARD-TOOLS.md    Ubuntu's tools first, and the audited exceptions
 docs/BASELINE.md           what the stock base actually contains, measured
 docs/BRANDING.md           every place Ubuntu's name has to go, and why
 docs/PERFORMANCE.md        what "fast" means here, as numbers that can fail
