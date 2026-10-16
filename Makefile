@@ -10,7 +10,8 @@ BASE_URL := https://cdimage.ubuntu.com/ubuntustudio/releases/resolute/release/ub
 SCRIPTS  := scripts
 TOOLS   := tools
 
-.PHONY: help base verify-base kernel brand packages selftest rt-fix test-booth
+.PHONY: help base verify-base kernel brand packages packages-report selftest rt-fix test-booth
+ROOTFS ?= /var/tmp/puralvos-build/layer
 help:
 	@echo "PuralvOS"
 	@grep -E '^[a-z-]+:.*?##' $(MAKEFILE_LIST) | sed 's/:.*##/\t/' | expand -t18
@@ -37,6 +38,12 @@ rt-fix: ## apply the real time audio fix, and verify it actually took
 	@echo "Runs inside a booted PuralvOS image as root, not on this machine."
 	@echo "  tools/puralvos-rt-fix           # the invoking or sudo user"
 	@echo "  tools/puralvos-rt-fix USER"
+
+packages-report: ## inventory the built image and propose removals
+	python3 $(TOOLS)/report-packages.py $(ROOTFS) | tee docs/PACKAGES.md
+	@echo
+	@echo "Bare list of candidate package names:"
+	@echo "  python3 $(TOOLS)/report-packages.py --list-only"
 
 selftest: ## run the self test in a booted image (not on this machine)
 	@echo "puralvos-selftest runs INSIDE a booted PuralvOS image, not here."

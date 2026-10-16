@@ -76,12 +76,15 @@ brand/tokens.json          the palette, one input for the whole identity
 brand/assets/              generated mark, wordmark, glyphs, wallpapers
 tools/make-brand.py        generate every brand asset from tokens.json
 tools/make-package-declaration.py   derive the package list from tasks.list
+tools/report-packages.py   inventory and removal proposal, from the built rootfs
+tools/build-live.sh        build the live image
 tools/puralvos-selftest    verify a booted image from the inside
 tools/kernel-select.py     find the real time kernel by asking apt
 tools/upgrade-curated.sh   upgrade our packages, leave yours alone
 docs/ARCHITECTURE.md       how the images are built
 docs/STANDARD-TOOLS.md    Ubuntu's tools first, and the audited exceptions
 docs/BASELINE.md           what the stock base actually contains, measured
+docs/PACKAGES.md           what the built image carries, and what could go
 docs/BRANDING.md           every place Ubuntu's name has to go, and why
 docs/PERFORMANCE.md        what "fast" means here, as numbers that can fail
 ```
@@ -93,6 +96,7 @@ make base          # fetch and verify the Ubuntu Studio ISO
 make kernel        # ask apt which real time kernel to use
 make brand         # generate the identity assets
 make packages      # derive the package declaration from tasks.list
+make packages-report   # what the built image carries, and what could go
 ```
 
 ## The kernel
