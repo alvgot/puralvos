@@ -302,63 +302,117 @@ def _glow(layer, cx, cy, radius, colour, strength):
     layer.paste(wash, (0, 0), mask)
 
 
+# The wallpaper palette. Deliberately wider than the three accents: three
+# colours repeated down a frame reads as a gradient with stripes. Every entry
+# is chosen to stay bright ON black rather than to be tinted by it, which is
+# the whole point of the additive glow below.
+VIVID = [
+    "#22D3EE",  # cyan
+    "#34D399",  # green
+    "#FBBF24",  # amber
+    "#A78BFA",  # violet
+    "#F472B6",  # pink
+    "#A3E635",  # lime
+    "#38BDF8",  # sky
+    "#FB7185",  # rose
+]
+
+
 def build_wallpaper(tokens, width=3840, height=2160, variant="deep"):
-    """A wallpaper, drawn rather than photographed.
+    """A field of vivid sinusoids on black.
 
-    Three washes of light, one per discipline, sitting off-centre so the
-    desktop icons have somewhere to live. Then the audio waveform as a fine
-    horizon line, because it is the discipline that defines the machine and a
-    media wallpaper with nothing to do with media is just a gradient.
+    Every line is a sum of sines, because a sine is what audio looks like and
+    this is a machine for audio. Lines are drawn thin and bright, then a blurred
+    copy of the same lines is added back on top: that additive pass is what
+    makes them glow rather than merely be coloured. Additive over black can
+    only brighten, which is why nothing goes muddy the way the earlier low
+    opacity washes did.
 
-    No logo. A desktop wallpaper with a wordmark across the middle is a
-    poster; the mark belongs on the login screen, the boot menu and the ISO.
+    Two things keep it a wallpaper rather than a poster. The field is denser
+    and brighter low in the frame and thins out towards the top, where the icon
+    grid lives. And there is no logo: a wordmark across a desktop is an
+    advertisement.
     """
-    from PIL import Image, ImageDraw
+    from PIL import Image, ImageDraw, ImageChops, ImageFilter
 
-    t = tokens
-    base = t["background"]["deep"] if variant == "deep" else t["background"]["base"]
+    # Draw at SS times the target size and downsample, which is what makes the
+    # lines smooth rather than stepped. PIL has no anti-aliased line drawing, so
+    # a 1px diagonal line at native resolution is a staircase and a field of
+    # them reads as noise. Two times is enough; three is not worth the memory at
+    # 4K, where the intermediate canvas is already 100 MB a layer.
+    SS = 2
+    width, height = width * SS, height * SS
     w, h = width, height
 
-    im = Image.new("RGB", (w, h), base)
-    layer = Image.new("RGB", (w, h), base)
+    # True black rather than the deep blue of tokens.json. The brief is a black
+    # background, and on black the vivid lines are at their most vivid.
+    im = Image.new("RGB", (w, h), (0, 0, 0))
+    lines = Image.new("RGB", (w, h), (0, 0, 0))
+    d = ImageDraw.Draw(lines)
 
-    # Off-centre and unequal: three glows on a symmetrical axis look like a
-    # default theme, and they would sit right behind the icon grid.
-    #
-    # Only two washes, not three. Amber at low strength over a dark blue base
-    # does not read as amber, it reads as olive mud, and a wallpaper with an
-    # olive corner is worse than one with no corner at all. Graphics keeps its
-    # accent as a line in the band below, where amber reads as amber because it
-    # is a thin bright mark on dark rather than a large dim one.
-    _glow(layer, w * 0.16, h * 0.26, w * 0.34, t["accent"]["audio"], 0.30)
-    _glow(layer, w * 0.84, h * 0.20, w * 0.30, t["accent"]["video"], 0.24)
-    im = Image.blend(im, layer, 0.85)
+    band = max(1, w // (1800 * SS))
+    # More lines on a bigger screen, but sub-linearly: doubling the resolution
+    # should not quadruple the work.
+    count = int(46 + 42 * (height / (2160.0 * SS)) ** 0.5)
 
-    d = ImageDraw.Draw(im, "RGBA")
+    for n in range(count):
+        u = n / float(max(1, count - 1))
 
-    # the audio horizon: three bands, quiet, low in the frame
-    y = h * 0.74
-    band = max(1, h // 900)
-    accents = (t["accent"]["audio"], t["accent"]["video"], t["accent"]["graphics"])
-    for n, colour in enumerate(accents):
+        # Biased low: y in [0.28, 0.97]. Empty at the top for the icons, dense
+        # signal underneath them.
+        y = h * (0.28 + 0.69 * (u ** 1.35))
+        # Amplitude grows towards the bottom too, so the frame has a shape
+        # instead of being an even hatch.
+        amp = h * 0.005 + h * 0.038 * (u ** 1.6)
+
+        # Per line frequency and phase, so no two repeat, with a slow drift so
+        # the wave appears to travel sideways. The golden angle keeps
+        # neighbouring lines from ever lining up into visible stripes.
+        f1 = 1.2 + 5.5 * ((n * 7919) % 100) / 100.0
+        f2 = f1 * (2.1 + 0.9 * ((n * 6271) % 100) / 100.0)
+        f3 = f1 * 0.37
+        ph = n * 2.399963
+
+        colour = hex_rgb(VIVID[(n * 5) % len(VIVID)])
+        # Brightness falls off towards the top, matching the density gradient.
+        lum = 0.78 + 0.22 * (u ** 0.8)
+        colour = tuple(min(255, int(c * lum)) for c in colour)
+
         pts = []
-        for i in range(0, w + 1, max(1, w // 400)):
-            u = i / float(w)
-            # Was h * 0.012, about 17 px at 1440p: a line you cannot see. A
-            # waveform you cannot see is not a waveform. And keep most of the
-            # width near full height, because an envelope that pinches in the
-            # middle turns the horizon into a lens shape rather than a horizon.
-            env = min(1.0, (min(u, 1.0 - u) / 0.12) ** 0.7)
-            a = h * 0.055 * env * (1.0 - 0.28 * n)
-            wobble = (math.sin(u * 46 + n * 1.7) * 0.55
-                      + math.sin(u * 113 + n * 2.9) * 0.30
-                      + math.sin(u * 7 + n) * 0.15)
-            pts.append((i, y + n * band * 9 + wobble * a))
-        d.line(pts, fill=hex_rgb(colour) + (150 - 30 * n,), width=band, joint="curve")
+        step = max(1, w // (1100 * SS))
+        for i in range(0, w + step, step):
+            x = i / float(w)
+            wave = (math.sin(x * math.pi * 2 * f1 + ph) * 0.62
+                    + math.sin(x * math.pi * 2 * f2 + ph * 1.7) * 0.26
+                    + math.sin(x * math.pi * 2 * f3 + ph * 0.4) * 0.12)
+            # Fade at the left and right margins so lines do not stop dead
+            # against the frame edge.
+            env = min(1.0, (min(x, 1.0 - x) / 0.08) ** 0.6)
+            pts.append((i, y + wave * amp * env))
+        d.line(pts, fill=colour, width=band, joint="curve")
 
-    # a hairline horizon to sit the bands on
-    d.line([(0, y), (w, y)], fill=hex_rgb(t["background"]["edge"]) + (200,), width=band)
-    return im
+    # The glow: a blurred copy of the lines added back additively. On black
+    # this is a pure brightening, so vivid stays vivid.
+    glow = lines.filter(ImageFilter.GaussianBlur(radius=max(3, h // 130)))
+    im = ImageChops.add(im, glow.point(lambda v: min(255, int(v * 1.15))))
+    im = ImageChops.add(im, lines)
+
+    # A tighter second halo, so the cores look hot rather than flat.
+    hot = lines.filter(ImageFilter.GaussianBlur(radius=max(2, h // 430)))
+    im = ImageChops.add(im, hot.point(lambda v: min(255, int(v * 0.75))))
+
+    # Fade the top, so an icon has somewhere quiet to sit even where a line
+    # happens to run.
+    fade = Image.new("L", (w, h), 255)
+    fd = ImageDraw.Draw(fade)
+    for yy in range(0, int(h * 0.30)):
+        fd.line([(0, yy), (w, yy)], fill=255 - int(150 * (yy / (h * 0.30)) ** 1.6))
+    im = ImageChops.multiply(im, fade.convert("RGB"))
+
+    # Down to the real size. The resampling also softens the glow, which is
+    # why the glow is applied after the lines are drawn but before this: the
+    # order matters and the tuning above assumed it.
+    return im.resize((width // SS, height // SS), Image.LANCZOS)
 
 
 def main():

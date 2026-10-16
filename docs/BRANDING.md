@@ -71,7 +71,7 @@ brand/assets/wordmark.svg      PuralvOS + tagline
 brand/assets/glyph-audio.svg   waveform
 brand/assets/glyph-video.svg   play
 brand/assets/glyph-graphics.svg aperture
-brand/assets/wallpaper-*.png   1080p, 1440p, 4k
+brand/assets/wallpaper-*.png   vivid sinusoids on black: 1080p, 1440p, 4k
 ```
 
 ### About the mark
@@ -87,6 +87,33 @@ so an identity built on it would read as somebody else's.
 
 It is also two people, on purpose: this is a workstation built for two specific
 users, not a product.
+
+### The wallpapers
+
+A field of vivid sinusoids on black. Every line is a sum of three sines at its
+own frequency and phase, so no two repeat, and the golden angle keeps
+neighbouring lines from ever lining up into visible stripes.
+
+Lines are drawn thin and bright, then a blurred copy of the same lines is
+**added back additively**. That second pass is why they glow rather than merely
+being coloured, and it works precisely because the background is true black:
+additive blending over black can only brighten. It is also the fix for the
+earlier version, where a low-opacity amber wash over dark blue came out olive
+mud. On black there is nothing to muddy.
+
+The field is biased low — denser and brighter towards the bottom, thinning out
+towards the top where the icon grid lives. There is no logo: a wordmark across
+a desktop is an advertisement.
+
+Everything is drawn at 2× and downsampled. PIL has no anti-aliased line
+drawing, so a one-pixel diagonal at native resolution is a staircase and a
+field of them reads as noise rather than as lines.
+
+The palette is wider than the three accents on purpose. Three colours repeated
+down a frame looks like a gradient with stripes; the eight vivid entries keep
+every line distinct while staying inside the identity.
+
+Three wallpapers, 1080p to 4K, about 7 MB, generated in fourteen seconds.
 
 ### Two things the generator got wrong first time
 
