@@ -1,0 +1,143 @@
+#!/bin/bash
+# Run Ubuntu Studio's own real time fix step, the way it actually works.
+#
+# PuralvOS is built on Ubuntu, so it uses Ubuntu's tools. The stock
+# /usr/sbin/ubuntustudio-installer-helper already does the right thing; the
+# problem is calling it.
+#
+# What "fix" does:
+#
+#   1. copies /usr/share/ubuntustudio-installer/30-ubuntustudio-audio.conf
+#      to /etc/security/limits.d/   (grants @audio rtprio 95, memlock
+#      unlimited, and the same for @pipewire)
+#   2. adds the invoking user to the audio group
+#
+# Step 2 is guarded like this:
+#
+#     if (( PKEXEC_UID > 999 )); then
+#             pexuid=$(id -nu "${PKEXEC_UID}")
+#             usermod -aG audio ${pexuid}
+#     fi
+#
+# PKEXEC_UID is set by pkexec, not by the helper. Called as root directly,
+# which is what a build does, it is unset:
+#
+#     (( PKEXEC_UID > 999 ))    with PKEXEC_UID unset
+#     -> the empty term is 0
+#     -> false
+#     -> no usermod
+#     -> the helper still exits 0
+#
+# So the standard helper, invoked the obvious way, installs the limits file,
+# skips the audio group, and reports success. The machine looks fine and
+# cannot do real time audio. This wrapper sets PKEXEC_UID properly so the
+# stock helper does the whole job, and then verifies it, because a helper that
+# exits 0 having done half its work is worse than one that fails.
+#
+# Usage:
+#   puralvos-rt-fix                 # fix for the invoking user
+#   puralvos-rt-fix USER            # fix for a named user
+#   puralvos-rt-fix USER --no-verify   # skip the check, not the fix
+#
+# Must run as root.
+
+set -u
+
+HELPER=/usr/sbin/ubuntustudio-installer-helper
+LIMITS=/etc/security/limits.d/30-ubuntustudio-audio.conf
+SRC=/usr/share/ubuntustudio-installer/30-ubuntustudio-audio.conf
+
+verify=1
+
+if [ "$(id -u)" != 0 ]; then
+	echo "puralvos-rt-fix: must run as root" >&2
+	exit 1
+fi
+
+# Which user. A build is usually root, which would be the wrong target, so
+# fall back to the sudo user, then to the first uid 1000 account.
+target=${1:-}
+if [ "${2:-}" = "--no-verify" ]; then
+	verify=0
+elif [ -n "$target" ] && [ "$target" = "--no-verify" ]; then
+	verify=0
+	target=""
+fi
+
+if [ -z "$target" ]; then
+	target=${SUDO_USER:-}
+fi
+if [ -z "$target" ] || [ "$target" = "root" ]; then
+	target=$(getent passwd | awk -F: '$3 >= 1000 && $3 < 65534 {print $1; exit}')
+fi
+
+if [ -z "$target" ]; then
+	echo "puralvos-rt-fix: no target user found; pass one explicitly" >&2
+	exit 1
+fi
+
+uid=$(id -u "$target")
+if [ -z "$uid" ] || [ "$uid" -lt 1000 ]; then
+	echo "puralvos-rt-fix: '$target' is not a real user account (uid $uid)" >&2
+	exit 1
+fi
+
+echo "puralvos-rt-fix: target user $target (uid $uid)"
+
+# The stock helper, with PKEXEC_UID set so its audio group step actually runs.
+if [ ! -x "$HELPER" ]; then
+	echo "puralvos-rt-fix: $HELPER not installed; is ubuntustudio-installer present?" >&2
+	exit 1
+fi
+
+PKEXEC_UID="$uid" "$HELPER" fix
+rc=$?
+if [ $rc -ne 0 ]; then
+	echo "puralvos-rt-fix: the helper failed with status $rc" >&2
+	exit $rc
+fi
+echo "puralvos-rt-fix: helper returned 0"
+
+# The helper returning 0 means nothing, as established above. Check the two
+# things it was supposed to do and report them separately, so a half-applied
+# fix is visible as a half-applied fix.
+if [ "$verify" != 1 ]; then
+	echo "puralvos-rt-fix: not verifying, as asked"
+	exit 0
+fi
+
+problems=0
+
+if [ -r "$LIMITS" ]; then
+	if grep -qE '^\s*@audio\s+-\s+rtprio\s+9[0-9]' "$LIMITS"; then
+		echo "puralvos-rt-fix: ok   limits file grants @audio rtprio"
+	else
+		echo "puralvos-rt-fix: BAD  $LIMITS exists but does not grant rtprio" >&2
+		problems=$((problems+1))
+	fi
+	if grep -qE '^\s*@audio\s+-\s+memlock\s+unlimited' "$LIMITS"; then
+		echo "puralvos-rt-fix: ok   limits file grants @audio memlock unlimited"
+	else
+		echo "puralvos-rt-fix: BAD  $LIMITS does not grant memlock unlimited" >&2
+		problems=$((problems+1))
+	fi
+else
+	echo "puralvos-rt-fix: BAD  $LIMITS is missing" >&2
+	problems=$((problems+1))
+fi
+
+if id -nG "$target" | tr ' ' '\n' | grep -qx audio; then
+	echo "puralvos-rt-fix: ok   $target is in the audio group"
+else
+	echo "puralvos-rt-fix: BAD  $target is NOT in the audio group" >&2
+	echo "puralvos-rt-fix:      the helper skipped its usermod, which is what it" >&2
+	echo "puralvos-rt-fix:      does when PKEXEC_UID is unset" >&2
+	problems=$((problems+1))
+fi
+
+if [ "$problems" -gt 0 ]; then
+	echo "puralvos-rt-fix: $problems problem(s). This machine cannot do real time audio yet."
+	exit 1
+fi
+
+echo "puralvos-rt-fix: done, $target can run real time audio"

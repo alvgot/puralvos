@@ -74,14 +74,26 @@ glitch under load because none of this happened.
 
 From `ubuntustudio-installer-helper`'s `fix` action:
 
+Ubuntu Studio already ships this. `/usr/sbin/ubuntustudio-installer-helper fix`
+copies `30-ubuntustudio-audio.conf` into `/etc/security/limits.d/`, granting
+
 ```
-/etc/security/limits.d/30-ubuntustudio-audio.conf   → memlock unlimited, rtprio 95
-usermod -aG audio <user>
+@audio     rtprio 95   memlock unlimited
+@pipewire  rtprio 95   memlock unlimited
 ```
 
-**Verified from inside the built image** by reading the limits file and the
-group membership. Not assumed, because assuming it is how you get a system
-that looks right and sounds wrong.
+and adds the invoking user to the `audio` group. PuralvOS uses that stock
+helper rather than writing its own — see
+[ARCHITECTURE.md](ARCHITECTURE.md) for why calling it needs a wrapper.
+
+**`tools/puralvos-rt-fix`** wraps it, and then checks the two things it was
+supposed to do. The check is not redundant: the helper exits 0 having skipped
+the audio group when `PKEXEC_UID` is unset, which is what happens when a build
+calls it directly as root. That check is verified, in ARCHITECTURE.md.
+
+Verified from inside the built image by reading the limits file and the group
+membership. Not assumed, because assuming it is how you get a system that
+looks right and sounds wrong.
 
 ### 2. CPU governor
 

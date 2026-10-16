@@ -41,54 +41,83 @@ that changed in 24.04 and is the first thing to trip up anyone rebuilding it.
 
 ## The decision: how does the installed system get *our* package set
 
-This is the part that is not obvious, and it decides everything else.
+**Decided: option 1, preseed ubiquity. Use Ubuntu's own tools.**
 
-Ubuntu Studio's own installer knows to install the Studio task set. Ours must
-install **audio + video + graphics and nothing else**, and it must not install
-the general kernel. Three ways to do it:
+PuralvOS is built on Ubuntu, so it is built with Ubuntu's tools rather than
+with a private build system. That is the decision, and it settles the
+question rather than deferring it: ubiquity preseeded, apt for packages, and
+the stock Ubuntu Studio helper for the real time step. Nothing here is a
+reimplementation of something Ubuntu already ships.
 
-### 1. Preseed ubiquity with our package list
+### What "the standard tools" turns out to be, exactly
 
-ubiquity runs a package install during install; a preseed can say which
-packages to add and which to remove.
+Checked against the real packages rather than assumed. `ubuntustudio-installer`
+2.0.7 (resolute) is a **GUI**. It takes package names as arguments, shows a
+GTK or Qt checklist, and has no command line flags and no preseed hook of its
+own — verified, not assumed.
 
-- **For:** small, declarative, no second copy of the build logic.
-- **Against:** the removal half is a long list of "remove this, that and the
-  other", and anything ubiquity pulls in on its own has to be enumerated by
-  hand and kept in step with excludes.list.
+So what it does has to be read out of its backend, and it turns out to be
+three apt commands and one tiny helper:
 
-### 2. Install the base, then apply our tasks and exclusions afterwards
+| What the GUI does | What it actually is |
+| --- | --- |
+| tick a task, Install | `pkexec /usr/sbin/ubuntustudio-installer-helper install <pkgs>` |
+| the Apply fix button | `pkexec /usr/sbin/ubuntustudio-installer-helper fix` |
+| untick a task, Remove | `pkexec /usr/sbin/ubuntustudio-installer-helper autoremove <pkgs>` |
 
-- **For:** one place for the logic; excludes.list is applied exactly as it is
-  on the live side.
-- **Against:** slow. Installing the full Studio desktop and then tearing
-  several hundred packages back out downloads and unpacks the very things the
-  image is supposed not to contain. It also leaves autoremovable orphans and
-  makes "what is actually installed" depend on the order of two operations.
+So the standard tool's entire effect on a system is: install these metapackages
+with apt, run `fix`, optionally autoremove. Nothing more. Driving apt directly
+is not working around the standard tool, it is doing what it does, minus the
+mouse.
 
-### 3. Build the curated root filesystem ourselves and install that
+That is what makes option 1 workable rather than a compromise. The task list
+comes from upstream's own `METAPACKAGES` tuple in `backend.py` — it is
+already in `tasks.list` — so the GUI was only ever a checklist over ten
+metapackages. Preseeding eight of them is not a workaround.
 
-- **For:** the installed system is exactly the tested filesystem. No
-  install-then-remove window where the machine is wrong. No orphan packages
-  by construction.
-- **Against:** the most work, and it means owning partition setup, bootloader
-  and the installer front end rather than reusing ubiquity's.
+### The plan
 
-### Recommendation
+- **ubiquity, preseeded**, with the curated package set from `tasks.list` and
+  the removals from `excludes.list`. Preseed is Ubuntu's own supported
+  mechanism for an unattended install and needs no polkit agent or a
+  graphical session.
+- **apt-get**, for the task packages, exactly as the standard helper does it.
+- **the stock `ubuntustudio-installer-helper fix`**, called as root during the
+  build — see the trap immediately below, because calling it naively does not
+  do what it looks like it does.
 
-**1 for the shipped image, 2 for the live image, 3 if the image grows a
-lifetime.**
+### The trap: the helper silently skips the audio group
 
-That sounds like fence-sitting, so the reasoning: the live image is
-overlaid onto casper at build time, so it never needs to install anything —
-the exclusion pass is free there. The installer only runs on the real path,
-and ubiquity's own install step is where a curated package list belongs. If
-PuralvOS ever gets an upgrade path, the answer stops being a build-time
-question and becomes a filesystem question, which is when option 3 starts
-paying for itself.
+This is verified, not theoretical. The `fix` action in
+`/usr/sbin/ubuntustudio-installer-helper` is:
 
-**This is not decided.** It needs Alv and Puria's preference, because it is a
-commitment about how the project grows, not a technical detail.
+```bash
+if (( PKEXEC_UID > 999 )); then
+        pexuid=$(id -nu "${PKEXEC_UID}")
+        /usr/sbin/usermod -aG audio ${pexuid}
+fi
+```
+
+`PKEXEC_UID` is an environment variable **set by pkexec**. Called the obvious
+way during a build — as root, directly, no pkexec — it is unset:
+
+```
+PKEXEC_UID unset  ->  (( > 999 ))  ->  false  ->  no usermod  ->  exit 0
+```
+
+So the helper copies the limits file into place, **skips adding the user to
+the `audio` group, and exits 0 saying it worked.**
+
+That produces precisely the failure this whole design is trying to avoid: a
+workstation that installs cleanly, has every application, opens its mixer, and
+cannot run audio at real time priority, with no error anywhere. A helper that
+exits 0 having done half its job is the worst kind of bug, because the build
+reports success.
+
+The build therefore sets `PKEXEC_UID` to the real user's uid when it calls
+the helper, and `tools/puralvos-selftest` checks the group membership
+independently rather than trusting the helper's exit status. That check exists
+for exactly this reason.
 
 ## What has to be true before any of this builds
 
