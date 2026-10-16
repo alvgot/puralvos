@@ -7,3 +7,8 @@
 base/*.iso
 base/*.iso.*
 base/*.tmp
+
+# Built images. These are outputs, not source: they are gigabytes each and
+# are reproduced by tools/build-live.sh from the verified base ISO.
+out/
+*.iso

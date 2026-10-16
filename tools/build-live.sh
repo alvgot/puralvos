@@ -113,13 +113,19 @@ say "unpacking the casper layers"
 BASE_UNION="$WORK/base-union"
 FULL="$WORK/layer"
 
-# Resumable. Unpacking 14 GB takes minutes and the expensive part is rarely
-# the part that fails, so if a usable build root is already there, reuse it
-# rather than starting over each time a later step needs fixing.
-if [ -x "$BASE_UNION/usr/bin/env" ] && [ "${PURALVOS_RESUME:-1}" = 1 ]; then
+# Resumable, with an explicit completion marker.
+#
+# The marker matters. Testing for $BASE_UNION/usr/bin/env is not a "did I
+# finish" check: the FIRST layer alone provides /usr/bin/env, so after an
+# interrupted first layer the test passes, the second layer is silently
+# skipped, and the union ends up missing the entire desktop and every
+# application in it. The symptom arrives much later as a working copy with no
+# binaries.
+MARK="$WORK/.layers-merged"
+if [ -f "$MARK" ] && [ "${PURALVOS_RESUME:-1}" = 1 ]; then
 	echo "  reusing the existing build root"
 else
-	rm -rf "$BASE_UNION" "$FULL"
+	rm -rf "$BASE_UNION" "$FULL" "$MARK"
 	mkdir -p "$BASE_UNION" "$FULL"
 fi
 
@@ -163,7 +169,7 @@ merge_layer() {
 for L in minimal minimal.standard; do
 	SRC="$WORK/iso/casper/$L.squashfs"
 	[ -f "$SRC" ] || die "missing layer $SRC. See docs/BASELINE.md: 26.04 is layered."
-	if [ -x "$BASE_UNION/usr/bin/env" ]; then
+	if [ -f "$MARK" ]; then
 		printf '  %-30s %5.0f MB  (already unpacked)\n' "$L.squashfs" \
 			"$(( $(stat -c %s "$SRC") / 1048576 ))"
 		continue
@@ -173,6 +179,7 @@ for L in minimal minimal.standard; do
 	merge_layer "$SRC" "$BASE_UNION"
 done
 
+touch "$MARK"
 echo "  read-only union (minimal + minimal.standard): $(du -sh "$BASE_UNION" | cut -f1)"
 [ -x "$BASE_UNION/usr/bin/env" ] \
 	|| die "the read-only union has no /usr/bin/env; the layers did not merge"
@@ -185,7 +192,7 @@ echo "  read-only union (minimal + minimal.standard): $(du -sh "$BASE_UNION" | c
 echo "  read-only paths: $(wc -l < "$WORK/base.list")"
 
 # The working copy is the whole three layer union plus room to change it.
-cp -a "$BASE_UNION" "$FULL"
+cp -a "$BASE_UNION/." "$FULL/"
 printf '  %-30s %5.0f MB  -> working copy\n' "minimal.standard.live.squashfs" \
 	"$(( $(stat -c %s "$WORK/iso/$LAYER") / 1048576 ))"
 merge_layer "$WORK/iso/$LAYER" "$FULL"
@@ -461,20 +468,30 @@ done
 say "writing the ISO"
 STAMP=$(date +%Y%m%d-%H%M)
 ISOUT="$OUT/puralvos-live-$STAMP.iso"
-xorriso -as mkisofs \
-	-V "PURALVOS_LIVE" \
-	-o "$ISOUT" \
-	--quiet \
-	-iso-level 4 \
-	-b boot/grub/i386-pc/eltorito.img \
-	-no-emul-boot -boot-load-size 4 -boot-info-table \
-	--grub2-mbr /usr/lib/ISOLINUX/isohdpfx.bin \
-	-eltorito-alt-boot \
-	-e EFI/boot/bootx64.efi \
-	-no-emul-boot -isohybrid-gpt-basdat \
-	-c boot.catalog \
-	-input-charset utf-8 \
-	"$WORK/iso" 2>&1 | grep -viE '^xorriso : (NOTE|Drive|Media|Added|Track|Image|ISO|Writing|libburn|Attempt|Returning|Dev|Block|Command|executed|Write|Size|Using|Final|End|Ready|Volume|Creating|New|Start|Parameters|xorriso :)' | tail -5 | sed 's/^/  /'
+
+# The ISO is authored as an UPDATE of the original, not from scratch.
+#
+# Authoring from scratch means reproducing the boot record exactly: the MBR
+# signature at offset 510, the GPT header at LBA 1, the appended partition, and
+# the El Torito catalog with both its BIOS and UEFI entries. Getting that wrong
+# does not fail loudly. It produces a perfectly well formed 7 GB ISO that
+# boots straight into the UEFI shell instead of GRUB, which is exactly what
+# happened the first time, and the El Torito report says everything looks
+# right while the machine still will not start.
+#
+# With -indev and -outdev together, xorriso copies the system area, the boot
+# catalog and the El Torito records from the source image and changes only what
+# -update names. Those structures then come from an ISO already known to boot
+# on this hardware class, so they are correct by construction rather than
+# correct by argument.
+#
+# It is also the honest description of what this is: a PuralvOS live image IS
+# the Ubuntu Studio image, updated.
+xorriso -indev "$BASE_ISO" -outdev "$ISOUT" \
+	-volid "PURALVOS_LIVE" \
+	-update "$WORK/iso/" 2>&1 \
+	| grep -viE 'NOTE|Drive|Media|Added to|Track|ISO image|Writing|libburn|Attempt|Returning|Dev |Block|Command|executed|Write|Size |Using|Final|End |Ready|Volume|Creating|New |Start |Parameters|^xorriso' \
+	| tail -6 | sed 's/^/  /'
 
 ls -la "$ISOUT" | awk '{printf "  ISO: %s  %.2f GB\n", $NF, $5/1073741824}'
 sha256sum "$ISOUT" | awk '{print "  sha256: "$1}'

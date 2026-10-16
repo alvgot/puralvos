@@ -40,8 +40,8 @@ qemu-system-x86_64 \
 	-enable-kvm \
 	-machine pc,accel=kvm \
 	-cpu host \
-	-m 4096 -smp 4 \
-	-bios /usr/share/ovmf/OVMF.fd \
+	-m ${KVM_MEM:-6144} -smp ${KVM_CPUS:-4} \
+	-bios ${KVM_BIOS:-/usr/share/ovmf/OVMF.fd} \
 	-drive file="$ISO",format=raw,if=none,id=cd0,readonly=on \
 	-device ide-cd,drive=cd0,bootindex=1 \
 	-boot order=d \
