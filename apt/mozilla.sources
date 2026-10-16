@@ -1,0 +1,37 @@
+Types: deb
+URIs: https://packages.mozilla.org/apt
+Suites: mozilla
+Components: main
+Signed-By: /etc/apt/keyrings/mozilla.gpg
+Enabled: yes
+
+# Firefox, as a real Debian package.
+#
+# PuralvOS has no snap (see excludes.list, "NO SNAP"). That has a cost: on
+# Ubuntu 26.04 the `firefox` package in the Ubuntu archive is a *transitional
+# wrapper* whose entire job is to install the snap. Removing snapd therefore
+# removes the browser, and purging the archive's `firefox` deb does not bring
+# it back.
+#
+# Alv and Puria use Firefox, so it has to come from somewhere real. Mozilla
+# maintains an apt repository at packages.mozilla.org: upstream-built debs,
+# signed by Mozilla's own key, updated on Mozilla's release schedule.
+#
+# This is a third-party repository and that is a real cost, stated rather than
+# glossed over:
+#
+#   * It is a second archive to trust, pin by key, and update. Two archives
+#     means two things that can break the build and one more signature to
+#     verify. tools/manifest.py tracks what comes from where so that stays
+#     visible.
+#   * It is NOT a snap. It is an ordinary .deb installed by apt, pinned by
+#     version like everything else, removable with apt, and updatable by the
+#     same curated upgrade path as every other package in the image. That is
+#     the whole reason for using it.
+#   * If Mozilla ever stops publishing for a given Ubuntu release, the build
+#     breaks loudly at apt-get update rather than silently shipping a browser
+#     nobody can update.
+#
+# The alternative, if this ever goes wrong, is not "go back to snap". It is
+# chromium from the Ubuntu archive, which is a real deb and is already in the
+# archive PuralvOS trusts.

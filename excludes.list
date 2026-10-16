@@ -36,22 +36,20 @@ linux-headers-generic-hwe-26.04
 linux-headers-generic-hwe-26.04-edge
 
 # --- general purpose desktop ----------------------------------------------
-#
-# A document suite is not an audio or video tool. It arrives because the
-# installation media seeds it; PuralvOS is a workstation image, not a general
-# desktop with a media section.
-
-libreoffice-calc
-libreoffice-impress
-libreoffice-core
-libreoffice-common
-libreoffice-core-nogui
-libreoffice-style-colibre
-libreoffice-style-sifr
-libreoffice-qt6
-libreoffice-plasma
-libreoffice-kf6
-libreoffice-writer
+  #
+  # LibreOffice STAYS. It was on this list and it was wrong: the reason given
+  # was "a document suite is not an audio or video tool", which is a statement
+  # about taste, not about whether the two people who use this machine need it.
+  # Alv and Puria write things. A workstation that cannot open a .odt or a
+  # .docx is a workstation with a papercut in it every single day.
+  #
+  # Recorded because the next person to read this file will assume every
+  # general purpose package here is excluded, and will "helpfully" add it back
+  # or take it out. Neither. It is present, on purpose.
+  #
+  # Note what this means for the size argument: 21 packages of LibreOffice is
+  # not a problem worth solving. Snap was 4 GB. The trim is not about making
+  # the image small, it is about removing what is actively in the way.
 
 # --- packaging and app distribution ---------------------------------------
   #

@@ -50,10 +50,6 @@ import sys
 # acts on it. A rule with no reason does not belong in this file.
 
 RULES = [
-    ("office", r"^libreoffice|^ure$|^libreoffice-",
-     "The whole office suite. 20 packages. PuralvOS is audio, video and "
-     "graphics; this is a word processor and a spreadsheet."),
-
     ("input method", r"^fcitx",
      "28 packages of Chinese/Japanese/Korean input method. Nobody has asked "
      "for CJK text entry on a two-person English-language workstation. "
@@ -63,9 +59,9 @@ RULES = [
      "21 packages of printer support, including HP drivers. A workstation in "
      "a room is not a print server."),
 
-    ("snap", r"^snapd$|^snapd-desktop-integration|^libsnapd|^plasma-discover-backend-snap$|^firefox$|^thunderbird$",
-     "Snapd, its libraries, Plasma's snap backend, and the two applications "
-     "that are themselves snaps. This is the largest single saving in the "
+    ("snap", r"^snapd$|^snapd-desktop-integration|^libsnapd|^plasma-discover-backend-snap$|^thunderbird$",
+     "Snapd, its libraries, Plasma's snap backend, and Thunderbird, which "
+     "is itself a snap. This is the largest single saving in the "
      "build and it is not a package count: the stock image carries 14 snaps "
      "and about 4 GB of /var/lib/snapd, against a whole 69-package trim that "
      "saves far less. Firefox and Thunderbird go with it, because in the "
@@ -263,6 +259,22 @@ def main():
             shown += ", ... (%d more)" % (len(hits) - 12)
         print(shown)
         print()
+
+    print("## Kept on purpose")
+    print()
+    print("Software that looks removable and is not, because these two people")
+    print("use it. A removal proposal that ignores this is a removal proposal")
+    print("nobody acted on.")
+    print()
+    print("| kept | why |")
+    print("| --- | --- |")
+    print("| `firefox` | from packages.mozilla.org, NOT the Ubuntu archive copy. "
+          "The archive's is `1:1snap1`, a wrapper whose only job is installing "
+          "the snap. See `apt/mozilla.sources`. |")
+    print("| `libreoffice-*` | Alv and Puria write things. 21 packages is not "
+          "worth saving; snap was 4 GB and this is the trim talking about the "
+          "wrong thing. |")
+    print()
 
     print("## Do not remove these")
     print()

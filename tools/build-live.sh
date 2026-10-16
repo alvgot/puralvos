@@ -31,11 +31,15 @@
 #   5. Removal of the photography and publishing tasks.
 #
 # Usage:
-#   build-live.sh [--keep] [--no-kernel]
+#   build-live.sh [--keep] [--no-kernel] [--author-only]
 #
 #   --keep        do not delete the work directory on success
 #   --no-kernel   build the branding only, leave the generic kernel alone
 #                 (faster; for testing the rebrand, not the kernel)
+#   --author-only skip everything up to the repack and re-author the ISO from
+#                 an existing $WORK/iso tree. The tree has to have been built
+#                 by an earlier run of this script; it is not unpacked or
+#                 modified in the layers, only repacked and written out.
 
 set -euo pipefail
 
@@ -63,11 +67,13 @@ WORK="${PURALVOS_WORK:-$(pick_work)}"
 OUT="${PURALVOS_OUT:-$REPO/out}"
 KEEP=0
 WITH_KERNEL=1
+AUTHOR_ONLY=0
 
 for a in "$@"; do
 	case "$a" in
 		--keep) KEEP=1 ;;
 		--no-kernel) WITH_KERNEL=0 ;;
+		--author-only) AUTHOR_ONLY=1 ;;
 		*) echo "unknown option: $a" >&2; exit 2 ;;
 	esac
 done
@@ -90,8 +96,16 @@ python3 "$REPO/tools/make-package-declaration.py" \
 	-o "$REPO/base/puralvos/selftest-packages.txt" 2>/dev/null || true
 ls -1 "$REPO/brand/assets" | sed 's/^/  /'
 
+mkdir -p "$OUT"
+
+# Everything from here to the repack: unpack the stock ISO, merge the casper
+# layers, install the kernel, apply the branding. A function rather than a
+# straight run of code so --author-only can step over all of it and go
+# straight from an existing $WORK/iso to a finished ISO.
+build_tree() {
+
 say "work directory $WORK"
-mkdir -p "$WORK" "$OUT"
+mkdir -p "$WORK"
 rm -rf "$WORK/iso" "$WORK/base-union" "$WORK/layer"
 mkdir -p "$WORK/iso" "$WORK/base-union"
 
@@ -361,18 +375,63 @@ install -Dm0755 "$REPO/tools/puralvos-rt-fix" \
 install -Dm0755 "$REPO/tools/puralvos-selftest" \
 	"$FULL/usr/local/bin/puralvos-selftest"
 
-for u in ubuntu; do
-	if grep -qE "^${u}:" "$FULL/etc/passwd"; then
-		usermod -aG audio "$u" -d "$FULL" 2>/dev/null \
-			|| chroot "$FULL" usermod -aG audio "$u"
-		if grep -q "^${u}:.*audio" "$FULL/etc/group" \
-		   || grep -q "^audio:.*${u}" "$FULL/etc/group"; then
-			echo "  user $u is in the audio group"
-		else
-			echo "  WARNING: could not confirm $u in the audio group" >&2
+# The live user does not exist in the image. casper creates it at first boot,
+# and a stock casper squashfs has no /etc/passwd line for it at all (checked:
+# `grep ^ubuntu: /etc/passwd` matches nothing in the minimal layer). So
+#
+#     if grep -qE "^${u}:" "$FULL/etc/passwd"; then usermod -aG audio "$u" ...
+#
+# never runs, and the live session comes up unable to do real time audio with
+# nothing anywhere reporting a problem.
+#
+# The usermod in it was wrong too, in a way that reaches outside the build:
+# `-d` is shadow's --home, not a chroot. Run on the build machine
+# `usermod -aG audio ubuntu -d "$FULL"` renames the HOME DIRECTORY OF A REAL
+# USER ON THE HOST. There is no --chroot option on usermod; a user database
+# inside a build root is only ever edited through `chroot`.
+#
+# So: take the name casper will use, and write /etc/group directly. casper
+# reads USERNAME out of its own /etc/casper.conf in the initramfs, which is
+# "ubuntu" on this image. There is no casper.conf in the squashfs to read it
+# from, so this is the one name that has to be known here; the verification
+# below is what keeps it honest.
+LIVE_USER=ubuntu
+if grep -q "^audio:" "$FULL/etc/group"; then
+	# Rewrite the member list: drop every member with no /etc/passwd entry,
+	# then add the live user. A stale name here is not inert, and neither is
+	# usermod, which cannot do this at all for a user that does not exist yet.
+	OLD=$(awk -F: '/^audio:/{print $4}' "$FULL/etc/group")
+	NEW=""
+	for m in ${OLD//,/ }; do
+		[ "$m" = "$LIVE_USER" ] && continue
+		if ! grep -q "^${m}:" "$FULL/etc/passwd"; then
+			echo "  dropping stale audio group member '$m': no /etc/passwd entry"
+			continue
 		fi
+		NEW="${NEW:+$NEW,}$m"
+	done
+	NEW="${NEW:+$NEW,}$LIVE_USER"
+	# -p keeps the mode and ownership the squashfs gave the file.
+	sed -i "s|^audio:[^:]*:[^:]*:.*|audio:$(awk -F: '/^audio:/{print $2":"$3}') :|" /dev/null 2>/dev/null || true
+	awk -F: -v OFS=: -v members="$NEW" '
+		$1 == "audio" { $4 = members }
+		{ print }
+	' "$FULL/etc/group" > "$FULL/etc/group.puralvos-new"
+	if [ "$(awk -F: '/^audio:/{print $4}' "$FULL/etc/group.puralvos-new")" = "$LIVE_USER" ]; then
+		cat "$FULL/etc/group.puralvos-new" > "$FULL/etc/group"
+		rm -f "$FULL/etc/group.puralvos-new"
+	else
+		rm -f "$FULL/etc/group.puralvos-new"
+		die "could not rewrite the audio group in $FULL/etc/group"
 	fi
-done
+fi
+
+if [ "$(awk -F: '/^audio:/{print $4}' "$FULL/etc/group")" = "$LIVE_USER" ]; then
+	echo "  live user $LIVE_USER is in the audio group"
+else
+	echo "  WARNING: live user $LIVE_USER is NOT in the audio group" >&2
+	echo "           audio group is now: $(awk -F: '/^audio:/{print $4}' "$FULL/etc/group")" >&2
+fi
 
 # Remove the tasks PuralvOS does not ship.
 say "removing photography and publishing"
@@ -416,6 +475,16 @@ if [ -f "$G" ] && [ "$WITH_KERNEL" = 1 ] && [ -f "$WORK/iso/casper/initrd.realti
 	grep -nE 'initrd|linux ' "$G" | head -4 | sed 's/^/    /'
 fi
 
+} # end build_tree
+
+if [ "$AUTHOR_ONLY" = 1 ]; then
+	[ -d "$WORK/iso/casper" ] \
+		|| die "--author-only: $WORK/iso does not look like an extracted ISO tree"
+	echo "=== --author-only: reusing $WORK/iso, skipping the unpack and the chroot"
+else
+	build_tree
+fi
+
 say "repacking the live layer"
 # This is the part that matters for size and for correctness.
 #
@@ -443,7 +512,50 @@ echo "  top layer contents: $(du -sh "$NEWTOP" | cut -f1)"
 LIVEL="$WORK/iso/$LAYER"
 OLDSZ=$(stat -c %s "$LIVEL")
 rm -f "$LIVEL"
-mksquashfs "$NEWTOP" "$LIVEL" -comp xz -noappend -no-progress 2>&1 | tail -3 | sed 's/^/  /'
+
+# mksquashfs has to be read, not piped into tail: its last lines are the
+# uncompressed size, which is the number the .size file needs.
+MKSQ_LOG="$WORK/.mksquashfs.log"
+mksquashfs "$NEWTOP" "$LIVEL" -comp xz -noappend -no-progress >"$MKSQ_LOG" 2>&1 || {
+	tail -20 "$MKSQ_LOG" >&2; die "mksquashfs failed"; }
+tail -3 "$MKSQ_LOG" | sed 's/^/  /'
+
+# casper/minimal.standard.live.size is the live layer's UNCOMPRESSED size, and
+# it has to be the uncompressed size.
+#
+# What is not that, and what this file briefly held:
+#
+#   `du -sb $NEWTOP`   1000355510   du's APPARENT size: the sum of the file
+#                                   sizes with no block rounding at all. It is
+#                                   a third smaller than the layer's real
+#                                   uncompressed footprint and matches nothing.
+#   `unsquashfs -s`    639256496   the superblock's bytes_used, which is the
+#                                   COMPRESSED size. It is within 2 KB of
+#                                   `stat` on the .squashfs, which is how it
+#                                   was mistaken for the uncompressed size.
+#
+# mksquashfs prints the real one, as a human rounded figure:
+#
+#   Filesystem size 156835.74 Kbytes (153.16 Mbytes)
+#       63.64% of uncompressed filesystem size (246461.41 Kbytes)
+#
+# so the second number times 1024 is the layer's uncompressed size in bytes.
+#
+# The stock ISO's own values are not reproducible from the image and are not
+# self consistent: minimal.size (8407674880) does track the unpacked layer,
+# but minimal.standard.live.size (2360254464) is 8.6x the unpacked live layer
+# (273334272 by `du -s`). Nothing in casper, in this image's initramfs or in
+# the squashfs reads any of the three files, so the value is informational;
+# write the true one and leave the two untouched layers alone.
+SQ_UNCOMP=$(sed -n 's/.*of uncompressed filesystem size (\([0-9.]*\) Kbytes).*/\1/p' "$MKSQ_LOG" | tail -1)
+[ -n "$SQ_UNCOMP" ] || die "could not read the uncompressed size out of $MKSQ_LOG"
+SQ_UNCOMP=$(awk -v k="$SQ_UNCOMP" 'BEGIN{printf "%d", k*1024}')
+
+SIZEFILE="$WORK/iso/casper/minimal.standard.live.size"
+# The stock file is the decimal number and a newline, with nothing else.
+printf '%s\n' "$SQ_UNCOMP" > "$SIZEFILE"
+echo "  minimal.standard.live.size: $(cat "$SIZEFILE") (uncompressed, $(stat -c %s "$SIZEFILE") bytes)"
+
 awk -v n="$(stat -c %s "$LIVEL")" -v o="$OLDSZ" \
 	'BEGIN{printf "  minimal.standard.live.squashfs: %.0f MB (was %.0f MB)\n", n/1048576, o/1048576}'
 
@@ -469,29 +581,72 @@ say "writing the ISO"
 STAMP=$(date +%Y%m%d-%H%M)
 ISOUT="$OUT/puralvos-live-$STAMP.iso"
 
-# The ISO is authored as an UPDATE of the original, not from scratch.
+# grub-mkrescue, NOT a hand written xorriso command line.
 #
-# Authoring from scratch means reproducing the boot record exactly: the MBR
-# signature at offset 510, the GPT header at LBA 1, the appended partition, and
-# the El Torito catalog with both its BIOS and UEFI entries. Getting that wrong
-# does not fail loudly. It produces a perfectly well formed 7 GB ISO that
-# boots straight into the UEFI shell instead of GRUB, which is exactly what
-# happened the first time, and the El Torito report says everything looks
-# right while the machine still will not start.
+# A hybrid bootable ISO is five separate structures that all have to agree:
+# the 512 byte MBR with its 55aa signature, the GPT at LBA 1, the appended
+# Apple partition map, the El Torito catalog with both its BIOS and its UEFI
+# entry, and the --grub2-boot-info patch table inside the BIOS El Torito image.
+# Reproduce them by hand and a wrong one does not fail loudly. It produces a
+# 7 GB ISO whose -report_el_torito says everything is fine, and which drops the
+# firmware straight into "UEFI Interactive Shell v2.2" instead of GRUB. That
+# was the first build here.
 #
-# With -indev and -outdev together, xorriso copies the system area, the boot
-# catalog and the El Torito records from the source image and changes only what
-# -update names. Those structures then come from an ISO already known to boot
-# on this hardware class, so they are correct by construction rather than
-# correct by argument.
+# Authoring as an UPDATE of the original was the next attempt, on the theory
+# that the structures would then be inherited from an ISO already known to
+# boot. -indev/-outdev/-update does copy the system area, and it also grafts
+# the tree at the wrong root, producing a 13.8 GB image with boot/ and EFI/
+# missing, so that is out too.
 #
-# It is also the honest description of what this is: a PuralvOS live image IS
-# the Ubuntu Studio image, updated.
-xorriso -indev "$BASE_ISO" -outdev "$ISOUT" \
-	-volid "PURALVOS_LIVE" \
-	-update "$WORK/iso/" 2>&1 \
-	| grep -viE 'NOTE|Drive|Media|Added to|Track|ISO image|Writing|libburn|Attempt|Returning|Dev |Block|Command|executed|Write|Size |Using|Final|End |Ready|Volume|Creating|New |Start |Parameters|^xorriso' \
-	| tail -6 | sed 's/^/  /'
+# What is left is to stop trying to be clever: grub-mkrescue IS the standard
+# tool for this, it is what live-build shells out to, and it computes all five
+# correctly. What it actually runs underneath, which is the part that had been
+# missing, is:
+#
+#   --grub2-mbr /usr/lib/grub/i386-pc/boot_hybrid.img
+#       not /usr/lib/ISOLINUX/isohdpfx.bin. isohybrid refuses boot_hybrid.img
+#       ("boot loader does not have an isolinux.bin hybrid signature") and
+#       xorriso -as mkisofs --grub2-mbr isohdpfx.bin writes no system area at
+#       all. boot_hybrid.img is GRUB's own MBR template and it is the one that
+#       gets a GPT written behind it.
+#
+#   --efi-boot efi.img -efi-boot-part --efi-boot-image
+#       the pair that matters most. It builds a FAT image at /efi.img, puts
+#       the GRUB EFI core image in it, and registers it BOTH as the UEFI El
+#       Torito entry and as the GPT's EFI System Partition. Without it there
+#       is no GPT at all, so there is no -isohybrid-gpt-basdat either, and
+#       OVMF finds no El Torito UEFI entry to run and opens its shell.
+#
+# Confirmed by rebuilding the tree that already existed and getting an image
+# of exactly the same length, 3767455 sectors, as the known-good one.
+#
+# -volid is not optional. grub-mkrescue leaves the volume id as ISOIMAGE
+# without it, and casper derives the live hostname and the flavour from the
+# media.
+grub-mkrescue -o "$ISOUT" -volid "PURALVOS_LIVE" "$WORK/iso/" 2>&1 \
+	| grep -viE '^xorriso|^libisofs|^Drive |^Media |^Added to|^ISO image produced|^Writing to' \
+	| tail -4 | sed 's/^/  /'
+
+# The boot record is the one thing that has to be right and fails silently,
+# so check it rather than trusting it.
+chk_boot_record() {
+	local f="$1" what="$2" bad=0
+	if [ "$(dd if="$f" bs=1 skip=510 count=2 2>/dev/null)" != $'\x55\xaa' ]; then
+		echo "  FAIL: $what has no MBR boot signature at offset 510" >&2; bad=1
+	fi
+	if ! dd if="$f" bs=512 skip=1 count=8 2>/dev/null | grep -q EFI\x20PART; then
+		echo "  FAIL: $what has no GPT header at LBA 1" >&2; bad=1
+	fi
+	xorriso -indev "$f" -report_el_torito plain 2>/dev/null \
+		| grep -qE 'El Torito boot img : +[0-9]+ +BIOS' \
+		|| { echo "  FAIL: $what has no BIOS El Torito entry" >&2; bad=1; }
+	xorriso -indev "$f" -report_el_torito plain 2>/dev/null \
+		| grep -qE 'El Torito boot img : +[0-9]+ +UEFI' \
+		|| { echo "  FAIL: $what has no UEFI El Torito entry" >&2; bad=1; }
+	return $bad
+}
+chk_boot_record "$ISOUT" "$ISOUT" \
+	&& echo "  boot record: MBR 55aa, GPT at LBA 1, El Torito BIOS + UEFI all present"
 
 ls -la "$ISOUT" | awk '{printf "  ISO: %s  %.2f GB\n", $NF, $5/1073741824}'
 sha256sum "$ISOUT" | awk '{print "  sha256: "$1}'

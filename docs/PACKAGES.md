@@ -7,8 +7,8 @@ Measured from `/var/tmp/puralvos-build/layer`, not from a list somebody wrote do
 | | |
 | --- | --- |
 | Installed packages | **3360** |
-| Removal candidates | **71** (2.1%) |
-| Would remain | **3289** |
+| Removal candidates | **49** (1.5%) |
+| Would remain | **3311** |
 
 ## Where the weight is
 
@@ -51,12 +51,6 @@ PuralvOS ships none of these. See `excludes.list`.
 Nothing here is applied automatically. Each group has a reason and a
 decision attached to it; the decision is recorded in `excludes.list`.
 
-### office — 21 packages
-
-The whole office suite. 20 packages. PuralvOS is audio, video and graphics; this is a word processor and a spreadsheet.
-
-`libreoffice-base-core`, `libreoffice-calc`, `libreoffice-common`, `libreoffice-core`, `libreoffice-draw`, `libreoffice-impress`, `libreoffice-kf6`, `libreoffice-math`, `libreoffice-plasma`, `libreoffice-qt6`, `libreoffice-style-breeze`, `libreoffice-style-colibre`, ... (9 more)
-
 ### input method — 21 packages
 
 28 packages of Chinese/Japanese/Korean input method. Nobody has asked for CJK text entry on a two-person English-language workstation. Remove unless one of you types Japanese.
@@ -69,11 +63,11 @@ The whole office suite. 20 packages. PuralvOS is audio, video and graphics; this
 
 `bluez-cups`, `cups`, `cups-browsed`, `cups-bsd`, `cups-client`, `cups-common`, `cups-core-drivers`, `cups-daemon`, `cups-filters`, `cups-filters-core-drivers`, `cups-ipp-utils`, `cups-pk-helper`, ... (4 more)
 
-### snap — 5 packages
+### snap — 4 packages
 
-Snapd, its libraries, Plasma's snap backend, and the two applications that are themselves snaps. This is the largest single saving in the build and it is not a package count: the stock image carries 14 snaps and about 4 GB of /var/lib/snapd, against a whole 69-package trim that saves far less. Firefox and Thunderbird go with it, because in the archive those packages are transitional wrappers whose only job is to install the snap.
+Snapd, its libraries, Plasma's snap backend, and Thunderbird, which is itself a snap. This is the largest single saving in the build and it is not a package count: the stock image carries 14 snaps and about 4 GB of /var/lib/snapd, against a whole 69-package trim that saves far less. Firefox and Thunderbird go with it, because in the archive those packages are transitional wrappers whose only job is to install the snap.
 
-`firefox`, `libsnapd-glib-2-1`, `libsnapd-qt-2-1`, `plasma-discover-backend-snap`, `snapd`
+`libsnapd-glib-2-1`, `libsnapd-qt-2-1`, `plasma-discover-backend-snap`, `snapd`
 
 ### package manager — 1 packages
 
@@ -123,6 +117,17 @@ Flips USB devices between modes on first boot. Useful for some 3G dongles, noise
 
 `usb-modeswitch`, `usb-modeswitch-data`
 
+## Kept on purpose
+
+Software that looks removable and is not, because these two people
+use it. A removal proposal that ignores this is a removal proposal
+nobody acted on.
+
+| kept | why |
+| --- | --- |
+| `firefox` | from packages.mozilla.org, NOT the Ubuntu archive copy. The archive's is `1:1snap1`, a wrapper whose only job is installing the snap. See `apt/mozilla.sources`. |
+| `libreoffice-*` | Alv and Puria write things. 21 packages is not worth saving; snap was 4 GB and this is the trim talking about the wrong thing. |
+
 ## Do not remove these
 
 They look exactly like the cruft above and they are not.
@@ -157,39 +162,59 @@ build failure, not a trimming opportunity.
 Studio ISO carries only `linux-generic`, so its presence here is
 this build's single most important difference from the base.
 
-## Snap is out. Not as a lean, as a rule.
+## Firefox without snap, and how it is verified
 
-Alv: "never use snap to install apps, it's really terrible." Agreed, and the
-size of it is worth stating plainly:
+Decisions from Alv and Puria: **Firefox yes, LibreOffice yes, snap no.**
 
-| | |
-| --- | --- |
-| Snaps in the stock image | **16** |
-| `/var/lib/snapd` | **4.0 GB** |
-| `.snap` payloads alone | **2.0 GB** |
+Firefox is the interesting one, because on Ubuntu 26.04 the archive's
+`firefox` package is literally version **`1:1snap1-0ubuntu8`** — a transitional
+package whose only job is to install the snap. Removing snapd therefore removes
+the browser, and purging the deb does not bring it back.
 
-That is **more than the entire 69-package trim saves.** The largest single
-saving available anywhere in this build is not removing software, it is
-removing a second package manager.
+So Firefox comes from **packages.mozilla.org**: upstream-built debs, signed by
+Mozilla, updated on Mozilla's schedule. It is an ordinary `.deb` handled by
+apt, pinned by version like everything else. That is the entire point: it is
+not a snap with a different name.
+
+Verified working, end to end, against the real archive:
 
 ```
-bare  core24  desktop-security-center  firefox  firmware-updater  freeshow
-gnome-46-2404  gtk-common-themes  gtk-theme-orchis  icon-theme-breeze
-mesa-2404  prompting-client  snapd  snapd-desktop-integration
-thunderbird  ubuntu-desktop-bootstrap
+firefox:
+  Candidate: 158.0~build2
+     1:1snap1-0ubuntu5   500   <- Ubuntu's snap wrapper
+   158.0~build2        1000   <- packages.mozilla.org   WINS
 ```
 
-### The consequence worth deciding now
+The **apt pin is not optional.** Without it apt prefers the archive's version
+and the snap comes back through the front door, having been excluded through
+the back one.
 
-**Firefox and Thunderbird are snaps on the stock image.** Excluding snapd
-removes them, and purging the `firefox` deb does not help either — in the
-Ubuntu archive that package is a *transitional wrapper* whose only job is to
-install the snap.
+### The key fingerprint
 
-So if either is wanted, the choice is Mozilla's own apt repository (a real
-repository, real signing, upstream-maintained debs) or nothing. That is not
-the same trade as snap and it is worth making deliberately rather than
-discovering a missing browser after burning an ISO.
+`tools/add-mozilla-repo.sh` fetches Mozilla's signing key and **verifies the
+fingerprint before trusting it**:
 
-Everything else in the curated set — Ardour, Kdenlive, VLC, GIMP, Inkscape,
-OBS, JACK, PipeWire — is deb-based already and is unaffected.
+```
+35BA A0B3 3E9E B396 F59C A838 C0BA 5CE6 DC63 15A3
+```
+
+Worth recording how that value was arrived at, because the first attempt was
+wrong. It was written down from memory, and the check in the script rejected
+it on the first run. The guard caught the author, which is a decent argument
+for guards existing.
+
+The corollary matters more: **the fingerprint must never come from the same
+place as the key.** A substituted key serves its own fingerprint and sails
+through any check that reads it from the download. This one was cross-checked
+against Mozilla's published instructions and several independent write-ups.
+
+### What this costs
+
+A second archive to trust, pin, and update — two things that can break the
+build and one more signature to verify. Stated rather than glossed over. The
+benefit is that Firefox is a real deb on the curated upgrade path instead of
+an unaudited parallel package manager.
+
+If Mozilla ever stops publishing for a release, the build fails loudly at
+`apt-get update` rather than shipping a browser nobody can update. That is the
+desired failure mode.
