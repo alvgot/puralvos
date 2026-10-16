@@ -73,16 +73,23 @@ tasks.list                 what we install, and why. Single source of truth
 excludes.list              what we deliberately do not ship, with reasons
 apt/puralvos.sources       archive and components
 base/CHECKSUMS             pinned checksum of the base ISO
+brand/tokens.json          the palette, one input for the whole identity
+brand/assets/              generated mark, wordmark, glyphs, wallpapers
+tools/make-brand.py        generate every brand asset from tokens.json
 tools/kernel-select.py     find the real time kernel by asking apt
 tools/upgrade-curated.sh   upgrade our packages, leave yours alone
 docs/ARCHITECTURE.md       how the images are built
+docs/BASELINE.md           what the stock base actually contains, measured
+docs/BRANDING.md           every place Ubuntu's name has to go, and why
+docs/PERFORMANCE.md        what "fast" means here, as numbers that can fail
 ```
 
 ## Getting started
 
 ```sh
 make base          # fetch and verify the Ubuntu Studio ISO
-python3 tools/kernel-select.py --policy realtime
+make kernel        # ask apt which real time kernel to use
+make brand         # generate the identity assets
 ```
 
 ## The kernel

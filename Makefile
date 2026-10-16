@@ -10,7 +10,7 @@ BASE_URL := https://cdimage.ubuntu.com/ubuntustudio/releases/resolute/release/ub
 SCRIPTS  := scripts
 TOOLS   := tools
 
-.PHONY: help base verify-base kernel test-booth
+.PHONY: help base verify-base kernel brand test-booth
 help:
 	@echo "PuralvOS"
 	@grep -E '^[a-z-]+:.*?##' $(MAKEFILE_LIST) | sed 's/:.*##/\t/' | expand -t18
@@ -26,6 +26,9 @@ verify-base: ## check the base against Canonical's published checksum
 
 kernel: ## ask apt which real time kernel to use
 	python3 $(TOOLS)/kernel-select.py --policy realtime
+
+brand: ## generate the identity assets from brand/tokens.json
+	python3 $(TOOLS)/make-brand.py
 
 test-booth: ## boot the base under KVM and wait for the desktop
 	$(SCRIPTS)/kvmtest.sh $(BASE_ISO) puralvos-base 600 60
