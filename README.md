@@ -49,23 +49,61 @@ workstation.
 The cost is that PuralvOS cannot claim to be free software. `tools/manifest.py`
 exists so that stays a tracked decision rather than a surprise.
 
+## Images
+
+Two, built from the same curated filesystem so the thing you try live is the
+thing you get installed:
+
+| | boots to | installs to disk |
+| --- | --- | --- |
+| **PuralvOS** | full workstation, live | yes, via ubiquity |
+| **PuralvOS Live** | full workstation, live | optional |
+
+Ubuntu Studio 26.04.1 already ships ubiquity 26.04.1 and the casper live
+machinery, so neither image is being built from nothing. See
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how, and for the one decision
+still open: whether the installed system gets our package set through a
+preseed, through an install-then-exclude pass, or by shipping a curated
+filesystem wholesale.
+
 ## Layout
 
 ```
-tasks.list              what we install, and why. The single source of truth
-excludes.list           what we deliberately do not ship, with reasons
-apt/puralvos.sources    archive and components
-base/CHECKSUMS         pinned checksum of the base ISO
-tools/upgrade-curated.sh  upgrade our packages, leave yours alone
-tools/manifest.py       list what non-free software the image carries
+tasks.list                 what we install, and why. Single source of truth
+excludes.list              what we deliberately do not ship, with reasons
+apt/puralvos.sources       archive and components
+base/CHECKSUMS             pinned checksum of the base ISO
+tools/kernel-select.py     find the real time kernel by asking apt
+tools/upgrade-curated.sh   upgrade our packages, leave yours alone
+docs/ARCHITECTURE.md       how the images are built
 ```
 
 ## Getting started
 
 ```sh
-make base      # fetch and verify the Ubuntu Studio ISO
-make audit     # report what non-free software the base carries
+make base          # fetch and verify the Ubuntu Studio ISO
+python3 tools/kernel-select.py --policy realtime
 ```
+
+## The kernel
+
+**`linux-realtime`, discovered at build time, not hardcoded.**
+
+This one caught us out. On Ubuntu 26.04:
+
+```
+linux-lowlatency   Depends: linux-image-generic     ← the GENERIC kernel
+linux-realtime     Depends: linux-image-realtime    ← a real PREEMPT_RT build
+```
+
+`linux-lowlatency` is the generic kernel with low-latency boot arguments. It
+still preempts cooperatively and will still glitch. And the same name means
+different things per release — on 24.04 it pulls `linux-image-lowlatency`, on
+26.04 it pulls `linux-image-generic` — so a hardcoded name would have been
+right on one base and silently wrong on the other.
+
+`tools/kernel-select.py` asks apt what the kernel actually depends on and
+refuses any package whose image is not realtime.
 
 ## Licence and trademarks
 
@@ -79,10 +117,14 @@ name in its own branding.
 
 ## Status
 
-Early. The base image is fetched and verified; the task set is defined from
-upstream's own task table; the upgrade policy is written. Not yet done:
+Base image fetched and verified. Task set derived from upstream's own task
+table. Kernel selection verified against the archive. Upgrade policy written.
+Architecture written down.
 
-- the image build itself
-- booting and verifying it under KVM
+Not yet done:
+
+- the image build
+- booting and verifying under KVM
 - the non-free manifest tool
-- a curated package manifest for the upgrade policy
+- a licence
+- the installer decision, which is Alv and Puria's to make

@@ -50,24 +50,33 @@ ubuntustudio-pipewire-config
 # twice over: PPAs need apt pinning to work at all, and they are the usual way
 # a system ends up holding a kernel nobody will ever patch.
 #
-# Ubuntu 26.04 carries all of these in main:
+# linux-realtime, NOT linux-lowlatency. On Ubuntu 26.04 these are not what the
+# names suggest, and picking the wrong one fails silently:
 #
-#     linux-lowlatency           linux-lowlatency-7.0
-#     linux-lowlatency-hwe-26.04 linux-image-realtime
-#     linux-realtime             linux-realtime-7.0
+#     linux-lowlatency   Depends: linux-image-generic (= 7.0.0-14.14)
+#                        "Complete Generic Linux kernel and headers with
+#                         lowlatency boot configuration"
 #
-# lowlatency rather than realtime: lowlatency trades a little throughput for
-# predictable latency and is what Ubuntu Studio documents for audio work.
-# realtime is the PREEMPT_RT build and is the better choice for hard real time
-# plugin hosting. Both are one line apart, both ship in the archive, so
-# changing this is a rebuild and not a redesign.
+#     linux-realtime     Depends: linux-image-realtime (= 7.0.0-14.14.1)
+#                        "Complete Linux kernel for real-time systems"
+#
+# linux-lowlatency is the GENERIC kernel with low latency boot arguments:
+# mitigations off, no watchdog, that sort of thing. It still preempts
+# cooperatively, so it will still glitch under audio load. linux-realtime is
+# the PREEMPT_RT build, which is what real time priority actually needs.
+#
+# Verified against the resolute archive, not assumed. tools/kernel-select.py
+# re-derives this at build time so an upstream rename cannot quietly put a
+# generic kernel on a machine that thinks it has a real time one:
+#
+#     tools/kernel-select.py --policy realtime
 #
 # NOTE: the stock Ubuntu Studio ISO does NOT ship this kernel. Its manifest
 # carries only linux-generic 7.0.0-14.14. The real time kernel is installed
 # into the installed system by the installer, so PuralvOS has to do it
 # explicitly or it will silently be a general kernel.
 
-linux-lowlatency
+linux-realtime
 
 # --- deliberately absent --------------------------------------------------
 #
