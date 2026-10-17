@@ -10,8 +10,10 @@ BASE_URL := https://cdimage.ubuntu.com/ubuntustudio/releases/resolute/release/ub
 SCRIPTS  := scripts
 TOOLS   := tools
 
-.PHONY: help base verify-base kernel brand packages packages-all packages-report snap-census selftest rt-fix test-booth
+.PHONY: help base verify-base kernel brand packages packages-all packages-report \
+	snap-census selftest rt-fix test-booth test-parser live boot-test check
 ROOTFS ?= /var/tmp/puralvos-build/layer
+ISO    ?= $(wildcard out/puralvos-live-*.iso)
 
 # Snap is a decision, not a lean. excludes.list carries it, but the census is
 # here because the saving is in gigabytes and a package list hides that.
@@ -66,6 +68,38 @@ selftest: ## run the self test in a booted image (not on this machine)
 	@echo
 	@echo "Smoke test only, anywhere:"
 	@echo "  XWAIT=2 tools/puralvos-selftest   # XWAIT=2 skips the desktop wait"
+
+# The checks that can run here, on this machine, without a booted image. Small,
+# and they catch the class of bug where a verification tool itself is wrong.
+#
+# The desktop-entry parser had two implementations, one in the build and one in
+# the self test, and between them they reported OpenLP, Ardour and VLC as broken
+# applications on an image where all three are installed and working. That is
+# the worst kind of bug in a verification tool: it looks like a product defect,
+# and the response is to go and look for one.
+check: test-parser ## run every check that does not need a booted image
+	@echo "all local checks passed"
+
+test-parser: ## prove the desktop-entry parser reads the real Exec lines
+	bash $(TOOLS)/test-desktop-exec
+
+live: ## build the live image (needs ~45 GB; PURALVOS_RESUME=0 to rebuild from scratch)
+	$(TOOLS)/build-live.sh --keep
+
+# Boot the most recent ISO headlessly and print what it said about itself.
+#
+# The image writes uname, os-release and every check's result to the serial port,
+# so the result is in the log and does not need a screenshot to be read.
+boot-test: ## boot the newest ISO under KVM and show what it reported about itself
+	@ls -1t out/puralvos-live-*.iso 2>/dev/null | head -1 | \
+		{ read i; echo "booting $$i"; \
+		  $(SCRIPTS)/kvmtest.sh "$$i" puralvos-boot 900 30; \
+		  echo; \
+		  echo "=== what the image said about itself ==="; \
+		  grep -E '^(INFO|RESULT|PURALVOS SELFTEST END)' /tmp/opencode/kvmrun/puralvos-boot/serial.log || \
+			echo "no serial output; the image may not have been built with console=ttyS0"; }
+	@echo
+	@echo "Screenshots: /tmp/opencode/kvmrun/puralvos-boot/"
 
 test-booth: ## boot the base under KVM and wait for the desktop
 	$(SCRIPTS)/kvmtest.sh $(BASE_ISO) puralvos-base 600 60

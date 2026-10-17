@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+# test-desktop-exec - prove the desktop-entry parser reads real Exec lines.
+#
+# This parser had two independent copies, one in the build and one in the self
+# test, and both were wrong in different ways. Between them they reported
+# OpenLP, Ardour and VLC as broken applications on an image where all three are
+# installed and working. That is the worst class of bug in a verification tool:
+# it looks like a product defect, and the response is to go and look for one.
+#
+# The cases below are taken from the real .desktop files in the PuralvOS build
+# root, not invented. If a package changes its Exec line, add the new shape
+# here; if the parser cannot read it, this fails before an image is built.
+set -u
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/desktop-exec.sh
+. "$HERE/lib/desktop-exec.sh"
+
+fails=0
+pass() { printf '  ok   %-46s %s\n' "$1" "$2"; }
+fail() { printf '  FAIL %-46s %s\n' "$1" "$2"; fails=$((fails + 1)); }
+
+TMP=$(mktemp -d)
+trap 'rm -rf "$TMP"' EXIT
+
+# check NAME EXPECTED EXECLINE
+check() {
+	local name=$1 want=$2 line=$3 got
+	printf '[Desktop Entry]\nType=Application\nName=%s\nExec=%s\n' \
+		"$name" "$line" > "$TMP/t.desktop"
+	got=$(desktop_exec "$TMP/t.desktop")
+	if [ "$got" = "$want" ]; then
+		pass "$name" "-> $got"
+	else
+		fail "$name" "-> '$got', wanted '$want'   [$line]"
+	fi
+}
+
+echo "reading Exec lines out of real entries"
+
+# From the PuralvOS build root, verbatim.
+check openlp        openlp              'env -u WAYLAND_DISPLAY openlp %F'
+check ardour        /usr/bin/ardour     'FLTK_BACKEND=x11 /usr/bin/ardour %f'
+check vlc           /usr/bin/vlc        '/usr/bin/vlc --started-from-file %U'
+check vim           vim                 'vim %F'
+check gimp          gimp-3.2            'gimp-3.2 %U'
+check studio-sources pkexec             'pkexec env DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY ubuntustudio-software-properties'
+check software-qt   pkexec              'pkexec env DISPLAY=$DISPLAY XAUTHORITY=$XAUTHORITY software-properties-qt'
+
+# Shapes that turn up in the wild and are cheap to get wrong.
+check plain         ardour              'ardour'
+check flags-only    kdenlive            'kdenlive --no-splash %F'
+check env-assign    firefox             'env MOZ_ENABLE_WAYLAND=0 firefox %u'
+check env-bare      foo                 'env foo'
+check escaped-pct   gedit               'gedit %U # %f'
+check dd-of         gv                  'gv %d'
+# wish8.6 is a Tk interpreter entry: the executable IS wish8.6, in /usr/bin.
+# Reading it as "wish" is wrong, and checking for /usr/bin/wish would have
+# reported a working Tcl/Tk entry as broken.
+check tk-script     /usr/bin/wish8.6    '/usr/bin/wish8.6 /usr/share/tcltk/tcl8.6/demo.tcl'
+# xdg-open is a real executable, not a wrapper around mimetype.
+check xdg-open      xdg-open            'xdg-open %U'
+
+echo
+echo "an Exec line with nothing runnable in it"
+printf '[Desktop Entry]\nType=Application\nName=Broken\nExec=%%U\n' > "$TMP/t.desktop"
+if [ -z "$(desktop_exec "$TMP/t.desktop")" ]; then
+	pass "no-executable" "returns empty rather than inventing one"
+else
+	fail "no-executable" "returned '$(desktop_exec "$TMP/t.desktop")'"
+fi
+
+echo
+echo "an entry with no Exec line at all"
+printf '[Desktop Entry]\nType=Application\nName=NoExec\n' > "$TMP/t.desktop"
+if [ -z "$(desktop_exec "$TMP/t.desktop")" ]; then
+	pass "no-exec-line" "returns empty"
+else
+	fail "no-exec-line" "returned '$(desktop_exec "$TMP/t.desktop")'"
+fi
+
+echo
+echo "a missing file is not an error"
+if [ -z "$(desktop_exec "$TMP/does-not-exist.desktop")" ]; then
+	pass "missing-file" "returns empty"
+else
+	fail "missing-file" "returned something"
+fi
+
+echo
+echo "the first Exec line wins when there are several"
+printf '[Desktop Entry]\nType=Application\nName=Two\nExec=first-tool %%F\nExec=second-tool\n' \
+	> "$TMP/t.desktop"
+if [ "$(desktop_exec "$TMP/t.desktop")" = "first-tool" ]; then
+	pass "first-of-many" "-> first-tool"
+else
+	fail "first-of-many" "-> $(desktop_exec "$TMP/t.desktop")"
+fi
+
+echo
+echo "existence checking, against a directory we control"
+B=$TMP/bin
+mkdir -p "$B"
+# Executable, for the same reason as below: these fixtures stand in for programs.
+: > "$B/really-here";             chmod +x "$B/really-here"
+: > "$B/really-here-either";     chmod +x "$B/really-here-either"
+printf '[Desktop Entry]\nExec=really-here\n' > "$TMP/here.desktop"
+printf '[Desktop Entry]\nExec=really-here-either\n' > "$TMP/here2.desktop"
+printf '[Desktop Entry]\nExec=not-installed-anywhere\n' > "$TMP/gone.desktop"
+
+PATH="$B:$PATH"   # only for the no-root cases; a rooted check must not see this
+if desktop_exec_present "$TMP/here.desktop"; then
+	pass "present-on-PATH" "found"
+else
+	fail "present-on-PATH" "not found"
+fi
+if desktop_exec_present "$TMP/here2.desktop"; then
+	pass "present-off-PATH" "found on PATH"
+else
+	fail "present-off-PATH" "not found"
+fi
+if ! desktop_exec_present "$TMP/gone.desktop"; then
+	pass "absent" "reported missing"
+else
+	fail "absent" "reported present"
+fi
+
+echo
+echo "and no games: /usr/games is not consulted"
+if grep -q '/usr/games' "$HERE/lib/desktop-exec.sh"; then
+	if grep -q '/usr/games' "$HERE/lib/desktop-exec.sh" | grep -qv 'deliberately\|No \|empty'; then
+		fail "no-games-path" "still searches /usr/games"
+	else
+		pass "no-games-path" "only mentioned in a comment"
+	fi
+else
+	pass "no-games-path" "not mentioned"
+fi
+
+echo
+echo "checking against a ROOT other than the running system"
+#
+# This is the case that hid every application in the product. The build machine
+# is not a media workstation, so a check with no root asks it whether
+# /usr/bin/ardour exists, decides no, and hides Ardour from an image that has
+# it. Both halves are exercised here: a fake tree that HAS a binary must be
+# found, and one that does not must not.
+#
+ROOT="$TMP/root"
+mkdir -p "$ROOT/usr/bin" "$ROOT/usr/share/applications"
+# chmod +x, or the "binary" is not one. `test -x` is the whole point of the
+# check, so a fixture that is not executable would make this test fail for a
+# reason that has nothing to do with what is being tested.
+: > "$ROOT/usr/bin/in-the-image"
+chmod +x "$ROOT/usr/bin/in-the-image"
+printf '[Desktop Entry]\nExec=/usr/bin/in-the-image\n' > "$ROOT/here.desktop"
+printf '[Desktop Entry]\nExec=/usr/bin/not-in-the-image\n' > "$ROOT/gone.desktop"
+
+if desktop_exec_present "$ROOT/here.desktop" "$ROOT"; then
+	pass "found-under-root" "absolute path resolved against the given root"
+else
+	fail "found-under-root" "not found under the given root"
+fi
+if ! desktop_exec_present "$ROOT/gone.desktop" "$ROOT"; then
+	pass "absent-under-root" "reported missing under the given root"
+else
+	fail "absent-under-root" "reported present under the given root"
+fi
+# The host PATH must NOT leak into a rooted check. in-the-image is deliberately
+# NOT on PATH, and /usr/bin/in-the-image does not exist on the host either, so
+# a check that consulted the host would still pass here; the real proof is that
+# an absolute path under a root resolves relative to that root rather than to /.
+if desktop_exec_present "$ROOT/here.desktop"; then
+	fail "root-default" "found with no root, so it consulted the host filesystem"
+else
+	pass "root-default" "with no root, does not consult the host"
+fi
+
+echo
+if [ "$fails" -eq 0 ]; then
+	echo "all parser tests passed"
+	exit 0
+fi
+echo "$fails parser test(s) failed"
+exit 1

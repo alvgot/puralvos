@@ -132,12 +132,51 @@ it exists — it is not a PNG export path.
 
 ## Still to do
 
-- [ ] SDDM theme
-- [ ] Plymouth boot splash
-- [ ] GRUB theme and menu strings
-- [ ] Icon theme
-- [ ] Plasma theme and window decoration
-- [ ] App menu XML
-- [ ] Installer artwork override
-- [ ] `/etc/os-release`
-- [ ] the branding test described above
+Done by `tools/build-live.sh:brand_the_tree`, verified by tier 3 of
+`tools/puralvos-selftest`:
+
+- [x] SDDM theme — `/usr/share/sddm/themes/puralvos`, selected by
+      `/etc/sddm.conf.d/98-puralvos-theme.conf`. The QML is breeze's, which is
+      installed; only the background, the logo and the accent colour are ours.
+      Writing a Qt Quick greeter from scratch to replace four lines of
+      `theme.conf` is a Qt project, not a branding task.
+- [x] Plymouth boot splash — `/usr/share/plymouth/themes/puralvos`, selected by
+      `/etc/plymouth/plymouthd.default`. The watermark is a PNG generated from
+      `tokens.json`, because plymouth takes no SVG and there is no SVG rasteriser
+      on the build machine. The layout is the `two-step` module's, copied from
+      the `spinner` theme the image already ships.
+- [x] GRUB theme and menu strings — `/boot/grub/themes/puralvos` with the
+      palette substituted and Ubuntu Studio's artwork replaced;
+      `/etc/default/grub.d/99-puralvos.cfg` selects it. The menuentry titles are
+      rewritten in `grub.cfg`.
+- [x] `/etc/os-release` — and, because `/etc/os-release` is a symlink to
+      `../usr/lib/os-release` on this image, `/usr/lib/os-release` as well, with
+      the symlink put back afterwards.
+- [x] the branding test — tier 3 of `tools/puralvos-selftest`, which reads the
+      *running* system rather than the build tree.
+
+Not done:
+
+- [ ] Icon theme. `ubuntustudio-icon-theme` is still installed and still
+      providing the menu's icons. This is the largest remaining branding gap.
+- [ ] Plasma theme and window decoration. `ubuntustudio-look` is installed; the
+      accent colours come from `tokens.json` instead of Canonical's orange.
+- [ ] App menu XML. `ubuntustudio-menu` is installed and its sections are
+      still named for Ubuntu Studio.
+- [ ] Installer artwork override. ubiquity's own screens.
+
+## What "Ubuntu" may still say
+
+The self test checks for **Ubuntu Studio**, not for the substring `ubuntu`, and
+that distinction is deliberate.
+
+`ID_LIKE=ubuntu` and `UBUNTU_CODENAME=resolute` stay. PuralvOS is a derivative
+of Ubuntu Studio; `ID_LIKE=ubuntu` is what keeps apt and every Ubuntu package
+treating this as an Ubuntu system, and `UBUNTU_CODENAME` is what keeps
+version-locked dependencies resolving. Remove either and the product stops
+working as a derivative — so a check that failed on them would be demanding
+that this stop being a derivative.
+
+The check that failed on them was `grep -qi ubuntu /etc/os-release`, and it had
+failed on every boot of every build. A branding check that cannot pass is a
+branding check nobody reads.

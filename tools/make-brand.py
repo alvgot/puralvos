@@ -275,6 +275,52 @@ def render_preview(tokens, png_path, size=900):
     return png_path
 
 
+def render_mark_png(tokens, path, size=256, transparent=False):
+    """Rasterise just the mark, on its own, for the screens that want a bitmap.
+
+    plymouth's splash watermark is a PNG and nothing else, and the SDDM logo is
+    a bitmap too. Neither can take the SVG that is the actual deliverable, and
+    there is no SVG rasteriser on the build machine to convert it.
+
+    So this draws the same mark_geometry() that build_mark() writes out, as a
+    bitmap. One geometry, two renderers: the shapes cannot differ because they
+    are not defined twice.
+
+    Transparent is for plymouth, which composites the watermark over its own
+    background and would otherwise show a black square in the corner of every
+    boot. Opaque is for SDDM, which shows the logo on the wallpaper and wants
+    the mark's own rounded box behind it.
+    """
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError:
+        return None
+
+    g = mark_geometry(size)
+    s = g["size"]
+    colours = {
+        "audio": tokens["accent"]["audio"],
+        "video": tokens["accent"]["video"],
+        "graphics": tokens["accent"]["graphics"],
+    }
+
+    mode = "RGBA" if transparent else "RGB"
+    fill = (0, 0, 0, 0) if transparent else hex_rgb(tokens["background"]["base"])
+    im = Image.new(mode, (int(s), int(s)), fill)
+    d = ImageDraw.Draw(im)
+
+    x0, y0, x1, y1 = g["box"]
+    d.rounded_rectangle([x0, y0, x1, y1], radius=int(g["box_radius"]),
+                        outline=tokens["background"]["edge"],
+                        width=max(1, int(g["edge_width"])))
+
+    for role, width, pts in g["shapes"]:
+        d.line(pts, fill=colours[role], width=max(2, int(width)), joint="curve")
+
+    im.save(path)
+    return path
+
+
 def hex_rgb(value):
     """'#0B0E14' -> (11, 14, 20).
 
@@ -444,6 +490,26 @@ def main():
         print("\npreview: %s  (delete it, or keep it for review)" % preview)
     else:
         print("\npreview skipped: PIL not available")
+
+    # The rasterised mark, for the places that cannot take an SVG.
+    #
+    # plymouth's watermark is a PNG and nothing else, and there is no SVG
+    # rasteriser on this build machine, so the PNG is drawn here from the same
+    # mark_geometry() the SVG is written from. Two sources would drift; this is
+    # one source with two outputs.
+    #
+    # This is not only for plymouth. The SDDM logo is also a bitmap in the
+    # theme, and having it here means neither screen needs a rasteriser at
+    # build time, which is what kept the splash step from silently producing a
+    # theme with no watermark in it.
+    for name, px, transparent in (("mark-256.png", 256, False),
+                                  ("mark-alpha-256.png", 256, True)):
+        path = os.path.join(outdir, name)
+        if render_mark_png(tokens, path, px, transparent):
+            written.append(name)
+            print("  %s  %dpx%s" % (name, px, " transparent" if transparent else ""))
+        else:
+            print("  %s skipped: PIL not available" % name)
 
     try:
         import PIL  # noqa: F401

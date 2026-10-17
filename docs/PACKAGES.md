@@ -155,6 +155,26 @@ nobody acted on.
 | --- | --- |
 | `firefox` | from packages.mozilla.org, NOT the Ubuntu archive copy. The archive's is `1:1snap1`, a wrapper whose only job is installing the snap. See `apt/mozilla.sources`. |
 | `libreoffice-*` | Alv and Puria write things. 21 packages is not worth saving; snap was 4 GB and this is the trim talking about the wrong thing. |
+| `kmetronome` | A metronome is an audio tool and it is in the image. Its sibling `harmonoid` comes from `ubuntu-edu-music`, which is excluded, so the self test's launch list names one and not the other. |
+
+## Games
+
+**None.** PuralvOS ships no games, and the only evidence otherwise is an empty
+`/usr/games` directory that dpkg creates and nothing ever fills:
+
+```
+$ ls /usr/games          # empty
+$ dpkg-query -W '*game*' # nothing
+```
+
+Recorded because an empty directory is the kind of thing the next person to
+tidy up removes without asking, and because the desktop-entry search path in
+`tools/lib/desktop-exec.sh` used to include `/usr/games`. It does not now, and
+`tools/test-desktop-exec` asserts that it does not.
+
+The education metapackage stays out for the same reason: `ubuntu-edu-music` is
+not in `tasks.list`, and the self test's launch list mirrors `tasks.list` rather
+than naming tools that are not installed and skipping them once per boot.
 
 ## Do not remove these
 

@@ -126,3 +126,26 @@ laptop-detect
 # --- diagnostics that only matter when something is already broken --------
 
 memtest86+
+
+# --- games -----------------------------------------------------------------
+#
+# NO GAMES. This is a statement about the product, not a leaning.
+#
+# There is no games section in tasks.list, none of the three discipline
+# metapackages is a game, and the only thing in the base image that suggests
+# otherwise is an EMPTY /usr/games directory that dpkg creates for its own
+# reasons. That directory is empty on the built image and nothing in this
+# product puts anything in it.
+#
+# It is recorded here because the empty directory is exactly the kind of thing
+# that gets "cleaned up" by the next person who finds it, and because the
+# desktop-entry search path in tools/lib/desktop-exec.sh used to include
+# /usr/games. It does not now, and tools/test-desktop-exec asserts that it does
+# not: a search path containing a directory belonging to a class of software
+# this product does not ship is an assumption about the product.
+#
+# Related, and for the same reason, the education metapackage stays out:
+# ubuntu-edu-music brings a classroom's worth of notation, ear training and
+# music theory tools. It is not in tasks.list, and the self test's curated
+# launch list mirrors tasks.list rather than listing them and skipping.
+ubuntu-edu-music

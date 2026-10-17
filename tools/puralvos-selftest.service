@@ -1,0 +1,17 @@
+[Unit]
+Description=PuralvOS self test (runs only with puralvos.selftest=1 on the kernel command line)
+Documentation=file:///usr/local/bin/puralvos-selftest
+ConditionKernelCommandLine=puralvos.selftest=1
+After=multi-user.target display-manager.service
+Wants=display-manager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/puralvos-selftest
+# The test writes to /dev/ttyS0 itself; keep the unit quiet so a normal boot
+# (where the condition above is false) costs nothing.
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target

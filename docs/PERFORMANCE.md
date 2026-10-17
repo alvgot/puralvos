@@ -29,6 +29,35 @@ a laptop on a train.
 The one place it costs something: **battery life on a laptop will be worse than
 Ubuntu Studio's.** That is accepted, not overlooked.
 
+## Measuring RT priority, and why `setpriv` cannot
+
+`ulimit -r` has to be read through a PAM session, which in practice means
+`su - USER -c 'ulimit -r'`. Anything else measures the wrong thing.
+
+`pam_limits` is a PAM **session** module. It applies limits at the moment a
+session is opened, by matching the user against the groups in
+`/etc/security/limits.d/*.conf`. `setpriv` does not open a session: it re-execs
+with different credentials and inherits the limits of whatever called it. So
+
+```sh
+setpriv --reuid=1000 --regid=1000 --init-groups bash -c 'ulimit -r'
+```
+
+prints **0** on a perfectly configured image and 0 on a badly configured one.
+It never reads `/etc/security/limits.d` at all. The self test used exactly this
+for several builds, reported `rtprio is 0, audio WILL glitch under load`, and
+that failure was ignored — correctly — because it had never once been capable
+of reporting anything else. A check that cannot pass is worse than no check.
+
+`su`, `login`, `sddm` and `sddm-autologin` all carry `session required
+pam_limits.so`, so a real login gets the limits. That is the measurement, and it
+is what tier 2 of `tools/puralvos-selftest` now does.
+
+The strongest evidence is still not the number but the process: tier 2 also
+reads `Max real-time priority` and `Max locked memory` out of
+`/proc/<pipewire pid>/limits`, which is the kernel's own view of the audio
+daemon and depends on no tooling at all.
+
 ## Targets
 
 Measured on the installed system, not the live session. Numbers, not adjectives.
@@ -38,7 +67,7 @@ Measured on the installed system, not the live session. Numbers, not adjectives.
 | **JACK xruns** | **0** | `xrun` counter in `jack_control status`, over a 10 minute session with the load below |
 | JACK buffer, no xruns | 128 frames (2.67 ms @ 48 kHz) | same run |
 | Kernel | `PREEMPT_RT` | `uname -v`, must contain the RT flag |
-| RT priority granted | yes | `ulimit -r`, and `chrt -p $$` inside an audio app |
+| RT priority granted | yes | `su - $USER -c 'ulimit -r'`, and `chrt -p $$` inside an audio app |
 | Boot to desktop | < 8 s | `systemd-analyze`, NVMe, warm |
 | Login to usable | < 3 s | manual |
 | Idle RAM | < 900 MB | `free -m` at idle, no apps |

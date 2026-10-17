@@ -118,6 +118,37 @@ def load_tasks(path):
     return uniq(meta), uniq(pkgs), sections
 
 
+# tasks.list names what we WANT. This maps that to the package that actually
+# CARRIES it, which is not always the same name, and the difference matters
+# because this file is checked against dpkg.
+#
+# linux-realtime -> linux-image-realtime
+#
+# tasks.list says `linux-realtime`, and that is the right thing to want: it is
+# the metapackage that tracks the real time kernel. But a live image must not
+# install it, because it Depends on linux-headers-realtime — about 1.7 GB of
+# kernel headers, for a machine with nobody to compile a module on. So the
+# build installs linux-image-realtime, the image package, which is the kernel
+# itself, and purges the metapackage.
+#
+# Which means declaring `linux-realtime=pkg` produces a self test that fails on
+# every image this build makes, because the package it names is one the build
+# deliberately removes. The declaration has to name what ships.
+#
+# So: the intent stays in tasks.list and this table carries the one translation
+# between intent and implementation. It is here rather than hidden in the build
+# because this file is the thing the self test reads, and a mismatch between
+# them is exactly the kind of failure that reads as a packaging bug.
+CARRIED_BY = {
+    # tasks.list wants the metapackage, which tracks the real time kernel.
+    # The build installs the image package instead, because the metapackage
+    # Depends on ~1.7 GB of kernel headers and a live image has nobody to
+    # compile a module. The declaration has to name what SHIPS, because the
+    # self test checks this file against dpkg.
+    "linux-realtime": "linux-image-realtime",
+}
+
+
 def main(argv):
     out = None
     args = []
@@ -158,7 +189,17 @@ def main(argv):
     for name in meta:
         lines.append("%s=meta" % name)
     for name in pkgs:
-        lines.append("%s=pkg" % name)
+        lines.append("%s=pkg" % CARRIED_BY.get(name, name))
+
+    # Say what was translated, so the difference between tasks.list and the
+    # declaration is visible in the build output and not only in this file.
+    for want, have in sorted(CARRIED_BY.items()):
+        if want in pkgs:
+            sys.stderr.write(
+                "  %s is declared as %s:\n"
+                "    the metapackage pulls in kernel headers a live image has no\n"
+                "    use for, and the declaration is checked against dpkg\n"
+                % (want, have))
 
     text = "\n".join(lines) + "\n"
 

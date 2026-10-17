@@ -80,14 +80,21 @@ tools/make-package-declaration.py   derive the package list from tasks.list
 tools/report-packages.py   inventory and removal proposal, from the built rootfs
 tools/build-live.sh        build the live image
 tools/puralvos-selftest    verify a booted image from the inside
+tools/puralvos-selftest.service  the unit that runs it at boot, opt-in
+tools/puralvos-rt-fix      the in-image real time audio fix
+tools/lib/desktop-exec.sh  read the executable out of a .desktop file
+tools/test-desktop-exec    prove it reads the real entries correctly
 tools/kernel-select.py     find the real time kernel by asking apt
 tools/upgrade-curated.sh   upgrade our packages, leave yours alone
+scripts/kvmtest.sh         boot an image headlessly, capture serial + screenshots
+scripts/qmp-key.py         send keys to a running guest
 docs/ARCHITECTURE.md       how the images are built
 docs/STANDARD-TOOLS.md    Ubuntu's tools first, and the audited exceptions
 docs/BASELINE.md           what the stock base actually contains, measured
 docs/PACKAGES.md           what the built image carries, and what could go
 docs/BRANDING.md           every place Ubuntu's name has to go, and why
 docs/PERFORMANCE.md        what "fast" means here, as numbers that can fail
+docs/WORK-REPORT.md        where the build stands and what is still open
 ```
 
 ## Getting started
@@ -98,7 +105,20 @@ make kernel        # ask apt which real time kernel to use
 make brand         # generate the identity assets
 make packages      # derive the package declaration from tasks.list
 make packages-report   # what the built image carries, and what could go
+make test-parser       # prove the desktop-entry parser reads real entries
 ```
+
+Building an image needs about 45 GB free and takes roughly half an hour:
+
+```sh
+PURALVOS_RESUME=0 make live     # from scratch
+make live                       # reuse the unpacked layers
+make boot-test                  # boot it under KVM and read the serial log
+```
+
+`PURALVOS_RESUME=0` is the from-scratch switch. Without it the build reuses an
+existing unpacked tree, which is much faster and is what you want while
+iterating. See the note on the resume marker in `tools/build-live.sh`.
 
 ## The kernel
 
@@ -122,24 +142,47 @@ refuses any package whose image is not realtime.
 
 ## Licence and trademarks
 
-No licence file yet — **add one before there is code in the repository.** With
-none, the default is all rights reserved and nobody, including us, may legally
-reuse anything here. GPL-3.0 matches the Ubuntu base.
+**No licence file. With none, the default is all rights reserved and nobody,
+including us, may legally reuse anything here — and there is code in this
+repository.** This is the most overdue thing in the project.
+
+GPL-3.0 matches the Ubuntu base and is the obvious candidate, but the choice is
+yours and it has consequences for anyone who takes this further: GPL-3.0 makes
+derivatives GPL-3.0, and it is incompatible with proprietary redistribution.
 
 **Ubuntu and Ubuntu Studio are trademarks of Canonical Ltd, and Ubuntu Studio is
 not affiliated with Canonical.** This is a derivative and must not use either
-name in its own branding.
+name in its own branding. PuralvOS keeps `ID_LIKE=ubuntu` and
+`UBUNTU_CODENAME` in `os-release` on purpose — see
+[docs/BRANDING.md](docs/BRANDING.md) — and the self test checks for *Ubuntu
+Studio* rather than for the substring *ubuntu*, so those two stay.
 
 ## Status
 
-Base image fetched and verified. Task set derived from upstream's own task
-table. Kernel selection verified against the archive. Upgrade policy written.
-Architecture written down.
+The image builds and boots. A booted image reports its own kernel, its own
+`os-release` and every check's result over the serial port, so "is this image
+actually PuralvOS" is answered from outside the machine rather than by looking
+at the build log.
+
+See [docs/WORK-REPORT.md](docs/WORK-REPORT.md) for where the last build stands
+and what is still open.
 
 Not yet done:
 
-- the image build
-- booting and verifying under KVM
-- the non-free manifest tool
-- a licence
-- the installer decision, which is Alv and Puria's to make
+- a licence — **still the first thing to do.** Everything in this repository is
+  currently all rights reserved by default, and `tools/make-brand.py` has code
+  in it.
+- the non-free manifest tool, so that shipping proprietary software stays a
+  tracked decision (`tools/manifest.py`)
+- the installer decision: whether an installed system gets this package set
+  through a preseed, through an install-then-exclude pass, or by shipping a
+  curated filesystem wholesale. It is Alv and Puria's to make.
+- the icon theme, the Plasma theme and the app menu XML. `ubuntustudio-look`,
+  `ubuntustudio-icon-theme` and `ubuntustudio-menu` are still installed and
+  still Ubuntu Studio's, which makes the icon theme the largest remaining
+  branding gap. See [docs/BRANDING.md](docs/BRANDING.md).
+- audio verified on real hardware. Every real time claim in this repository has
+  been verified on a machine with no sound card, which is enough to prove the
+  *configuration* and not enough to prove the *performance*. `jack-xruns` in the
+  self test skips itself for exactly this reason rather than reporting a pass it
+  did not earn.

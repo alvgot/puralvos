@@ -21,4 +21,4 @@ ubuntustudio-performance-tweaks=pkg
 ubuntustudio-default-settings=pkg
 ubuntustudio-menu=pkg
 ubuntustudio-pipewire-config=pkg
-linux-realtime=pkg
+linux-image-realtime=pkg

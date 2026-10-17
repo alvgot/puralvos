@@ -85,6 +85,39 @@ fi
 XAuth="$SessionDir/Xauthority"
 [ -r "$XAuth" ] || XAuth="$PurHome/.Xauthority"
 
+# DISPLAY, discovered rather than assumed.
+#
+# This was hardcoded to :0 and the desktop check reported "no X server after
+# 240s" on an image whose session was on :1, because a second display manager
+# or a leftover greeter had taken :0. The test then reported the desktop as
+# dead when the desktop was running perfectly one display over.
+#
+# Three sources, in order of how much they can be trusted:
+#
+#   1. the environment of a process that belongs to the user's session. A PID,
+#      not a UID: /proc/<uid>/environ does not exist, so the first attempt at
+#      this read nothing at all and silently fell through to the next source.
+#      plasmashell is the right process to ask, because it is in the session and
+#      it is what this test already waits for.
+#   2. loginctl, which knows the session's display but only once one is
+#      registered.
+#   3. :0, which is a guess, and is labelled as one.
+DisPlay=""
+for _ppid in $(pgrep -u "$PurUid" -x plasmashell 2>/dev/null; \
+               pgrep -u "$PurUid" -x kwin_x11 2>/dev/null; \
+               pgrep -u "$PurUid" -x kwin_wayland 2>/dev/null); do
+	[ -r "/proc/$_ppid/environ" ] || continue
+	DisPlay=$(tr '\0' '\n' < "/proc/$_ppid/environ" 2>/dev/null |
+		sed -n 's/^DISPLAY=//p' | head -1)
+	[ -n "$DisPlay" ] && break
+done
+if [ -z "$DisPlay" ]; then
+	DisPlay=$(loginctl show-session "${PurUid}" -p Display --value 2>/dev/null | head -1)
+	[ -n "$DisPlay" ] && case "$DisPlay" in :*) ;; *) DisPlay=":$DisPlay" ;; esac
+fi
+[ -n "$DisPlay" ] || DisPlay=":0 (assumed: no session process to ask)"
+say "INFO display=$DisPlay session=$SessionDir xauth=$XAuth"
+
 if [ -c /dev/ttyS0 ]; then
 	chmod 0660 /dev/ttyS0 2>/dev/null
 fi
@@ -102,8 +135,8 @@ as_desktop() {
 		env \
 		HOME="$PurHome" USER="$PurUser" LOGNAME="$PurUser" \
 		SHELL=/bin/bash \
-		PATH="/usr/local/games:/usr/games:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-		DISPLAY=:0 XAUTHORITY="$XAuth" \
+		PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
+		DISPLAY="$DisPlay" XAUTHORITY="$XAuth" \
 		XDG_RUNTIME_DIR="$SessionDir" \
 		DBUS_SESSION_BUS_ADDRESS="unix:path=$SessionDir/bus" \
 		XDG_SESSION_TYPE=x11 XDG_SESSION_CLASS=user \
@@ -123,7 +156,6 @@ say "INFO uname=$(uname -a)"
 say "INFO distro=$(sed -n 's/^PRETTY_NAME="\(.*\)"$/\1/p' /etc/os-release 2>/dev/null | head -1)"
 say "INFO user=$PurUser uid=$PurUid home=$PurHome"
 say "INFO groups=$(id -nG "$PurUser" 2>/dev/null | tr ' ' ',')"
-say "INFO session=$SessionDir"
 say "INFO uptime=$(cut -d' ' -f1 /proc/uptime)s"
 
 # --------------------------------------------------------------------------
@@ -157,21 +189,51 @@ if [ "$XUP" != 1 ]; then
 	# record the failure, spill the diagnostics, carry on, and let tier 4 skip
 	# itself. Exiting first would throw away the answers to the questions this
 	# tool exists to answer.
-	result tier0 FAIL "desktop-started" "no X server after ${XWAIT}s"
+	#
+	# The two things that distinguish "no desktop" from "no display server" are
+	# reported first, because they have completely different causes and this
+	# failure message used to be the same for all three:
+	#
+	#   no greeter at all      sddm is not running; the session never started
+	#   greeter, no session    autologin is not configured, so the machine is
+	#                          sitting at a login prompt that nobody will answer
+	#   session, no X          the session started and the display server failed
+	#                          inside it; Xorg.0.log has the reason
+	result tier0 FAIL "desktop-started" "no X server on $DisPlay after ${XWAIT}s"
+	if pgrep -x sddm >/dev/null 2>&1; then
+		say "INFO sddm is running, so the display manager is up"
+		if pgrep -x sddm-greeter-qt >/dev/null 2>&1; then
+			say "INFO the greeter is showing and no session has started:"
+			say "INFO autologin is not configured, so nothing logs in by itself"
+			result tier0 FAIL "desktop-autologin" \
+				"a greeter is waiting for a login that will never come; the live session is not logged in"
+		else
+			result tier0 SLOW "desktop-autologin" \
+				"sddm is up and no greeter is showing; a session may be starting"
+		fi
+	else
+		result tier0 FAIL "desktop-displaymanager" \
+			"sddm is not running at all; check: systemctl status sddm"
+	fi
 	dump SESSIONLOG "$PurHome/.xsession-plasma.log" 80
 	dump XORGLOG /var/log/Xorg.0.log 60
 	say "--- process list"
 	ps -eo pid,user,comm --sort=pid 2>/dev/null |
 		while IFS= read -r l; do say "PS $l"; done
 else
-	result tier0 PASS "desktop-started" "X server up at $(cut -d' ' -f1 /proc/uptime)s"
+	result tier0 PASS "desktop-started" "X server up on $DisPlay at $(cut -d' ' -f1 /proc/uptime)s"
 fi
 
 # X answering does not mean the desktop is up: kwin and plasmashell come after
 # it. Give them a moment, otherwise this reports a perfectly healthy boot as a
 # dead desktop.
+#
+# Either compositor, for the same reason the tier 0 check below takes either:
+# kwin_x11 on X11, kwin_wayland on Wayland.
 for _ in $(seq 1 60); do
-	pgrep -x plasmashell >/dev/null 2>&1 && pgrep -x kwin_x11 >/dev/null 2>&1 && break
+	pgrep -x plasmashell >/dev/null 2>&1 &&
+		{ pgrep -x kwin_x11 >/dev/null 2>&1 || pgrep -x kwin_wayland >/dev/null 2>&1; } &&
+		break
 	sleep 1
 done
 
@@ -188,11 +250,25 @@ pgrep -x dbus-daemon >/dev/null 2>&1 \
 	&& result tier0 PASS "dbus-daemon-running" \
 	|| result tier0 FAIL "dbus-daemon-running" "no dbus-daemon process"
 
-for p in kwin_x11 plasmashell; do
-	pgrep -u "$PurUid" -x "$p" >/dev/null 2>&1 \
-		&& result tier0 PASS "desktop-$p" \
-		|| result tier0 FAIL "desktop-$p" "not running as ${PurUser}, the desktop cannot be up"
-done
+# The compositor, under whichever name it is running.
+#
+# kwin_x11 for an X11 session and kwin_wayland for a Wayland one. The old check
+# looked for kwin_x11 only, so on a Wayland session — which is what the base
+# image's own greeter starts — it reported the compositor as not running while
+# it was, and tier 0 read as a dead desktop. Accept either, and say which.
+if pgrep -u "$PurUid" -x kwin_x11 >/dev/null 2>&1; then
+	result tier0 PASS "desktop-kwin" "kwin_x11 running as ${PurUser}"
+elif pgrep -u "$PurUid" -x kwin_wayland >/dev/null 2>&1; then
+	result tier0 PASS "desktop-kwin" "kwin_wayland running as ${PurUser}"
+else
+	result tier0 FAIL "desktop-kwin" \
+		"no kwin_x11 or kwin_wayland as ${PurUser}, the desktop cannot be up"
+fi
+
+pgrep -u "$PurUid" -x plasmashell >/dev/null 2>&1 \
+	&& result tier0 PASS "desktop-plasmashell" \
+	|| result tier0 FAIL "desktop-plasmashell" \
+		"not running as ${PurUser}, the desktop cannot be up"
 
 # The desktop must belong to the user, not to root. When the session ran as
 # root the whole home directory filled up with root-owned files.
@@ -285,7 +361,7 @@ touch "${PurHome}/.selftest-write" 2>/dev/null \
 
 if ping -c1 -W2 9.9.9.9 >/dev/null 2>&1; then
 	result tier0 PASS "network-reachability"
-elif ip -o addr show scope global 2>/dev/null | grep -q .; then
+elif [ -n "$(ip -o addr show scope global 2>/dev/null)" ]; then
 	result tier0 SLOW "network-reachability" "interface up but no outbound ping"
 else
 	result tier0 FAIL "network-reachability" "no global interface"
@@ -323,15 +399,40 @@ say "INFO kernel package: ${Kpkg:-unknown}"
 # Reading the limits file is not enough on its own: the file can exist, be
 # correct, and still not apply if it was never read by a PAM stack that
 # matters. The number is what counts.
-RTprio=$(as_desktop bash -c 'ulimit -r' 2>/dev/null | tr -d ' ')
+#
+# Measured through a PAM SESSION, not through as_desktop.
+#
+# That is the whole reason this check reported FAIL on an image that was
+# correct. pam_limits is a PAM *session* module: it applies limits when a
+# session is opened. setpriv does not open one. It re-execs with different
+# credentials and inherits the limits of the process that called it, which is
+# this test running as root. So
+#
+#     as_desktop bash -c 'ulimit -r'
+#
+# can only ever print 0, on a perfectly configured image and a badly configured
+# one alike, because it never consults /etc/security/limits.d at all. A check
+# that cannot pass is a check that gets ignored, and this one had been ignored.
+#
+# su does open a session: /etc/pam.d/su carries `session required
+# pam_limits.so`, and so do login, sddm and sddm-autologin. So the honest
+# measurement is a real login as the user, and that is what this does.
+pam_ulimit() {
+	# pam_ulimit <shell keyword>: as the user, through PAM.
+	su - "$PurUser" -c "ulimit -$1" 2>/dev/null | tr -d ' \r'
+}
+
+RTprio=$(pam_ulimit r)
 case "$RTprio" in
-	''|*[!0-9]*) result tier2 FAIL "rtprio-limit" "could not read: '$RTprio'" ;;
+	''|*[!0-9]*)
+		result tier2 FAIL "rtprio-limit" \
+			"could not read rtprio through a PAM session as $PurUser (got '$RTprio')" ;;
 	*)
 		if [ "$RTprio" -ge 90 ]; then
-			result tier2 PASS "rtprio-limit" "rtprio $RTprio"
+			result tier2 PASS "rtprio-limit" "rtprio $RTprio in a real login session"
 		elif [ "$RTprio" -eq 0 ]; then
 			result tier2 FAIL "rtprio-limit" \
-				"rtprio is 0, audio runs at normal priority and WILL glitch under load"
+				"rtprio is 0 in a real login session, audio runs at normal priority and WILL glitch under load"
 		else
 			result tier2 SLOW "rtprio-limit" "rtprio $RTprio, expected 95"
 		fi
@@ -339,22 +440,74 @@ case "$RTprio" in
 esac
 
 # memlock: JACK maps large locked regions and is refused without this
-MEMlock=$(as_desktop bash -c 'ulimit -l' 2>/dev/null | tr -d ' ')
+MEMlock=$(pam_ulimit l)
 if [ "$MEMlock" = "unlimited" ] || [ "${MEMlock:-0}" -ge 1048576 ] 2>/dev/null; then
-	result tier2 PASS "memlock-limit" "memlock $MEMlock"
+	result tier2 PASS "memlock-limit" "memlock $MEMlock in a real login session"
 else
 	result tier2 FAIL "memlock-limit" \
-		"memlock is '$MEMlock', JACK will fail to lock memory it needs"
+		"memlock is '$MEMlock' in a real login session, JACK will fail to lock memory it needs"
+fi
+
+# And what the desktop's own processes actually got, which is the number that
+# matters. pipewire holds the audio threads, so its limits decide whether JACK
+# can lock memory.
+#
+# Read from /proc/<pid>/limits rather than by asking pipewire anything: it
+# works whether or not the daemon has finished starting, needs no pipewire
+# tooling, and reports the kernel's own view of the process.
+pwpid_early=$(pgrep -u "$PurUid" -x pipewire 2>/dev/null | head -1)
+if [ -n "$pwpid_early" ] && [ -r "/proc/$pwpid_early/limits" ]; then
+	proc_rt=$(awk '/^Max real-time priority/ {print $NF}' "/proc/$pwpid_early/limits")
+	proc_ml=$(awk '/^Max locked memory/ {print $(NF-3), $(NF-2), $(NF-1), $NF}' "/proc/$pwpid_early/limits")
+	if [ "${proc_rt:-0}" -ge 90 ]; then
+		result tier2 PASS "pipewire-rlimits" \
+			"pipewire runs with rtprio $proc_rt and memlock $proc_ml"
+	else
+		result tier2 FAIL "pipewire-rlimits" \
+			"pipewire itself is at rtprio ${proc_rt:-0}, memlock $proc_ml; the grants are not reaching the audio daemon"
+	fi
+else
+	result tier2 SKIP "pipewire-rlimits" "pipewire is not running yet, cannot read its limits"
 fi
 
 # The limits file itself, so the diagnosis is obvious when the numbers are
 # wrong. Its absence is the single most common cause of both failures above.
+# The four fields, space separated, and NO equals sign. limits.conf is parsed
+# by pam_limits as "<domain> <type> <item> <value>", so Ubuntu's own file,
+#
+#     @audio   -  rtprio     95
+#
+# is correct and this check used to require 'rtprio = 95', a form nothing ever
+# writes. It reported FAIL on an image carrying Ubuntu Studio's own limits file
+# verbatim, which is the worst kind of wrong: it sends you looking for a
+# packaging bug that is not there.
 LIMITS=/etc/security/limits.d/30-ubuntustudio-audio.conf
 if [ -r "$LIMITS" ]; then
-	if grep -qE 'rtprio\s*=\s*9[0-9]' "$LIMITS"; then
-		result tier2 PASS "limits-file" "present and grants rtprio"
+	# domain, item, lowest acceptable numeric value
+	limits_grants() {
+		awk -v dom="$1" -v item="$2" -v min="$3" '
+			/^[[:space:]]*#/ { next }
+			NF >= 4 && $1 == dom && $3 == item && $4 + 0 >= min + 0 { found = 1 }
+			END { exit(found ? 0 : 1) }
+		' "$LIMITS"
+	}
+	missing=""
+	limits_grants '@audio'    rtprio  90 || missing="$missing @audio-rtprio"
+	# memlock is checked as a word below, not through limits_grants: "unlimited"
+	# is not a number and $4 + 0 makes it 0, so a numeric comparison against a
+	# minimum of 0 passes for a line that is not there at all. There was a
+	# `limits_grants '@audio' memlock 0 || true` line here doing exactly that.
+	# It asserted nothing, which is worse than not asserting: it looked like the
+	# memlock grant was being checked.
+	grep -qE '^[[:space:]]*@audio[[:space:]]+[^[:space:]]+[[:space:]]+memlock[[:space:]]+unlimited' "$LIMITS" \
+		|| missing="$missing @audio-memlock"
+	limits_grants '@pipewire' rtprio  90 || missing="$missing @pipewire-rtprio"
+	grep -qE '^[[:space:]]*@pipewire[[:space:]]+[^[:space:]]+[[:space:]]+memlock[[:space:]]+unlimited' "$LIMITS" \
+		|| missing="$missing @pipewire-memlock"
+	if [ -z "$missing" ]; then
+		result tier2 PASS "limits-file" "grants rtprio 95 and memlock unlimited to @audio and @pipewire"
 	else
-		result tier2 FAIL "limits-file" "present but does not grant rtprio"
+		result tier2 FAIL "limits-file" "no grant for:$missing"
 	fi
 else
 	result tier2 FAIL "limits-file" \
@@ -362,10 +515,21 @@ else
 fi
 
 # The user must be in the audio group.
-if id -nG "$PurUser" 2>/dev/null | tr ' ' '\n' | grep -qx audio; then
+#
+# `id -nG | tr | grep -qx` would work, except that grep -q exits on the first
+# match and tr can then take SIGPIPE, and this script runs under `set -o
+# pipefail`. The pipeline's status becomes 128+13 instead of 0 and the check
+# reports the user is NOT in the audio group — on an image where they are, and
+# with the whole real time audio tier depending on the answer.
+#
+# The pipeline result is captured first, so nothing in it is ever killed early,
+# and the status read afterwards is grep's own.
+GROUPS=$(id -nG "$PurUser" 2>/dev/null)
+if printf '%s\n' "$GROUPS" | tr ' ' '\n' | grep -qx audio; then
 	result tier2 PASS "user-in-audio-group"
 else
-	result tier2 FAIL "user-in-audio-group" "$PurUser is not in the audio group"
+	result tier2 FAIL "user-in-audio-group" \
+		"$PurUser is not in the audio group (groups: ${GROUPS:-unknown})"
 fi
 
 # --- the tuning that is not a package --------------------------------------
@@ -424,11 +588,17 @@ fi
 pwpid=$(pgrep -u "$PurUid" -x pipewire 2>/dev/null | head -1)
 if [ -z "$pwpid" ]; then
 	result tier2 SKIP "pipewire-rt-policy" "pipewire is not running yet"
-elif chrt -p "$pwpid" 2>/dev/null | grep -q 'prio-95'; then
-	result tier2 PASS "pipewire-rt-policy" "running at priority 95"
 else
-	result tier2 FAIL "pipewire-rt-policy" \
-		"$(chrt -p "$pwpid" 2>/dev/null | tail -1 | tr -s ' ') - should be prio-95"
+	# Read chrt's whole output first. `chrt -p | grep -q` can lose the pipeline
+	# to SIGPIPE under pipefail, and then a pipewire running at priority 95 is
+	# reported as not running at 95.
+	PWPRIO=$(chrt -p "$pwpid" 2>/dev/null)
+	if printf '%s' "$PWPRIO" | grep -q 'prio-95'; then
+		result tier2 PASS "pipewire-rt-policy" "running at priority 95"
+	else
+		result tier2 FAIL "pipewire-rt-policy" \
+			"$(printf '%s' "$PWPRIO" | tail -1 | tr -s ' ') - should be prio-95"
+	fi
 fi
 
 # --- xruns -----------------------------------------------------------------
@@ -462,11 +632,23 @@ else
 	result tier3 FAIL "os-release-name" "NAME='$OSNAME', should be PuralvOS"
 fi
 
-if grep -qi ubuntu /etc/os-release 2>/dev/null; then
-	result tier3 FAIL "os-release-not-ubuntu" \
-		"$(grep -i ubuntu /etc/os-release | tr '\n' ' ' | cut -c1-120)"
+# Ubuntu Studio is the trademark that has to be gone. "Ubuntu" as a word is not,
+# and cannot be: PuralvOS is a derivative of Ubuntu Studio, ID_LIKE=ubuntu is
+# what keeps apt and every Ubuntu package treating this as an Ubuntu system,
+# and UBUNTU_CODENAME is what keeps version-locked dependencies resolving.
+# Remove either and the product stops working as a derivative.
+#
+# So the check is for "Ubuntu Studio" specifically, in any of the spellings it
+# appears in, and not for the substring "ubuntu". The old check was
+# `grep -qi ubuntu /etc/os-release`, which fails on ID_LIKE="ubuntu" on a
+# perfectly rebranded image, and had done so on every boot of every build.
+# A branding check that cannot pass is a branding check nobody reads.
+if grep -qiE 'ubuntu[ _-]?studio' /etc/os-release 2>/dev/null; then
+	result tier3 FAIL "os-release-not-ubuntu-studio" \
+		"$(grep -iE 'ubuntu[ _-]?studio' /etc/os-release | tr '\n' ' ' | cut -c1-120)"
 else
-	result tier3 PASS "os-release-not-ubuntu"
+	result tier3 PASS "os-release-not-ubuntu-studio" \
+		"no Ubuntu Studio string; ID_LIKE and UBUNTU_CODENAME are kept deliberately, see README.md"
 fi
 
 # The ISO's own label. Only present on a live image.
@@ -482,11 +664,17 @@ else
 fi
 
 # Wallpapers that are still Canonical's.
-UBUWALL=0
-for d in /usr/share/backgrounds /usr/share/wallpapers; do
+#
+# find -type f, over both directories, and the count is reported with the paths
+# when it is not zero. The old version reported a bare number, which is the
+# worst kind of failure report: "3 file(s) still say Ubuntu" and no indication
+# of which three, on a machine with a hundred wallpapers in it.
+UBUWALL_LIST=$(for d in /usr/share/backgrounds /usr/share/wallpapers; do
 	[ -d "$d" ] || continue
-	UBUWALL=$((UBUWALL + $(find "$d" -type f \( -iname '*ubuntu*' -o -iname '*studio*' \) 2>/dev/null | wc -l)))
-done
+	find "$d" \( -type f -o -type l \) \
+		\( -iname '*ubuntu*' -o -iname '*studio*' \) 2>/dev/null
+done)
+UBUWALL=$(printf '%s' "$UBUWALL_LIST" | grep -c . )
 PURWALL=$(find /usr/share/backgrounds -type f -iname '*puralvos*' 2>/dev/null | wc -l)
 if [ "$PURWALL" -gt 0 ]; then
 	result tier3 PASS "puralvos-wallpapers" "$PURWALL file(s) installed"
@@ -495,23 +683,52 @@ else
 fi
 if [ "$UBUWALL" -gt 0 ]; then
 	result tier3 FAIL "ubuntu-wallpapers-remain" \
-		"$UBUWALL file(s) in /usr/share/backgrounds still say Ubuntu or Ubuntu Studio"
+		"$UBUWALL file(s) still say Ubuntu or Ubuntu Studio: $(printf '%s' "$UBUWALL_LIST" | tr '\n' ' ' | cut -c1-160)"
 else
 	result tier3 PASS "ubuntu-wallpapers-remain"
 fi
 
 # Splash and login screens.
-for f in /usr/share/plymouth/themes/*PuralvOS* /usr/share/plymouth/themes/*puralvos*; do
-	[ -e "$f" ] && { result tier3 PASS "boot-splash"; break; }
-done
-[ -e /usr/share/plymouth/themes/*PuralvOS* ] || [ -e /usr/share/plymouth/themes/*puralvos* ] || \
-	result tier3 SLOW "boot-splash" "no PuralvOS plymouth theme; Ubuntu Studio's is still showing"
+#
+# Two things have to be true, and the old check only asked for one. It looked
+# for a theme DIRECTORY and reported SLOW when there was none, which is right,
+# but a directory that exists and is never selected would have passed it. So
+# the theme has to exist AND be the one the system will actually use.
+#
+# Presence:
+if [ -d /usr/share/plymouth/themes/puralvos ]; then
+	result tier3 PASS "boot-splash-theme" "/usr/share/plymouth/themes/puralvos"
+else
+	result tier3 SLOW "boot-splash-theme" \
+		"no PuralvOS plymouth theme; Ubuntu Studio's is installed instead"
+fi
+# Selection. plymouthd reads /etc/plymouth/plymouthd.default, and that is the
+# file that decides what is on screen during boot.
+PLY=$(sed -n 's/^PLYMOUTH_THEME_NAME=//p' /etc/plymouth/plymouthd.default 2>/dev/null | head -1)
+if [ "$PLY" = "puralvos" ]; then
+	result tier3 PASS "boot-splash-active" "plymouthd.default selects '$PLY'"
+elif [ -n "$PLY" ]; then
+	result tier3 FAIL "boot-splash-active" "plymouthd.default selects '$PLY', not puralvos"
+else
+	result tier3 SLOW "boot-splash-active" \
+		"/etc/plymouth/plymouthd.default does not select a theme; the splash is whatever plymouth defaults to"
+fi
 
-for f in /usr/share/sddm/themes/*PuralvOS* /usr/share/sddm/themes/*puralvos*; do
-	[ -e "$f" ] && { result tier3 PASS "login-screen"; break; }
-done
-[ -e /usr/share/sddm/themes/*PuralvOS* ] || [ -e /usr/share/sddm/themes/*puralvos* ] || \
-	result tier3 SLOW "login-screen" "no PuralvOS SDDM theme"
+if [ -d /usr/share/sddm/themes/puralvos ]; then
+	result tier3 PASS "login-screen-theme" "/usr/share/sddm/themes/puralvos"
+else
+	result tier3 SLOW "login-screen-theme" "no PuralvOS SDDM theme"
+fi
+# Selection. SDDM reads Current= from its config directory.
+SDDM_THEME_NAME=$(cat /etc/sddm.conf.d/*theme*.conf 2>/dev/null |
+	sed -n 's/^Current=//p' | head -1)
+if [ "$SDDM_THEME_NAME" = "puralvos" ]; then
+	result tier3 PASS "login-screen-active" "sddm selects '$SDDM_THEME_NAME'"
+elif [ -n "$SDDM_THEME_NAME" ]; then
+	result tier3 FAIL "login-screen-active" "sddm selects '$SDDM_THEME_NAME', not puralvos"
+else
+	result tier3 SLOW "login-screen-active" "no sddm theme selection found; the greeter uses its default"
+fi
 
 # Anything left anywhere that claims to be the boot menu or the installer.
 GRUBSTILL=$(grep -rlisE 'ubuntu[ -]?studio' /boot/grub /EFI/ubuntu 2>/dev/null | wc -l)
@@ -560,31 +777,30 @@ list_desktops() {
 		-maxdepth 1 -name '*.desktop' 2>/dev/null | sort
 }
 
-# Pull the executable out of an Exec= line, ignoring the desktop spec field
-# codes (%f %u %U %F ...) and honouring the quoting rules.
+# Pull the executable out of an Exec= line, from the shared library.
 #
-# An Exec line can start with a wrapper, as some Qt apps do with
-# "env GDK_BACKEND=x11 kdenlive %F". Taking the first word there would launch
-# /usr/bin/env with no arguments and report a perfectly good application as
-# broken, so step over a leading env and any VAR=value that follows it.
-exec_from_desktop() {
-	sed -n 's/^Exec=//p' "$1" | head -1 |
-	sed -e 's/%%/%/g' -e 's/%[fFuUdDnNickvm]//g' |
-	awk '
-	{
-		for (i = 1; i <= NF; i++) {
-			if ($i ~ /^[A-Za-z0-9_.\/-]+$/) {
-				if ($i == "env") {
-					j = i + 1
-					while (j <= NF && $j ~ /^[A-Za-z_][A-Za-z0-9_]*=/) j++
-					if (j <= NF) { print $j; exit }
-				} else {
-					print $i
-					exit
-				}
-			}
-		}
-	}'
+# The library lives in tools/lib/ in the repository and is installed into the
+# image at /usr/local/lib/puralvos/desktop-exec.sh, and this test runs from
+# either place. One parser, both callers: when the build and the test each had
+# their own, they disagreed, the test's was wrong about "env -u VAR cmd", and
+# it reported OpenLP as broken on an image where OpenLP was fine.
+for _lib in /usr/local/lib/puralvos/desktop-exec.sh \
+            "$(dirname "$(readlink -f "$0")")/lib/desktop-exec.sh"; do
+	[ -r "$_lib" ] && . "$_lib" && break
+	_lib=""
+done
+if [ -z "${_lib:-}" ]; then
+	say "RESULT tier1 FAIL selftest-incomplete the desktop-entry library is missing"
+fi
+
+# Is a bare binary name runnable? Used by the launch tests. No /usr/games: this
+# product ships no games, and that directory is empty in the image.
+binary_present() {
+	case "$1" in
+		/*) [ -x "$1" ] ;;
+		*)  command -v "$1" >/dev/null 2>&1 ||
+		    { [ -x "/usr/local/bin/$1" ] || [ -x "/usr/bin/$1" ]; } ;;
+	esac
 }
 
 NDESK=0
@@ -594,18 +810,20 @@ for d in $(list_desktops); do
 	grep -qE '^NoDisplay=true' "$d" 2>/dev/null && continue
 	grep -qE '^Exec=' "$d" 2>/dev/null || continue
 	NDESK=$((NDESK+1))
-	bin=$(exec_from_desktop "$d")
 	name=$(sed -n 's/^Name=\(.*\)$/\1/p' "$d" | head -1)
 	[ -z "$name" ] && name=$(basename "$d" .desktop)
-	if [ -z "$bin" ]; then
+	if [ -z "$(desktop_exec "$d")" ]; then
 		result tier1 FAIL "desktop:$name" "no Exec found in $d"
 		continue
 	fi
-	if ! command -v "$bin" >/dev/null 2>&1 &&
-	   ! test -x "/usr/games/$bin" && ! test -x "/usr/local/games/$bin" &&
-	   ! test -x "/usr/bin/$bin" && ! test -x "/usr/local/bin/$bin" &&
-	   ! test -x "/usr/sbin/$bin" && ! test -x "/opt/$bin"; then
-		result tier1 FAIL "desktop:$name" "Exec '$bin' not found ($d)"
+	# "/" explicitly, and not left to the default. Inside a running image the
+	# two are the same thing, but a default that silently changes meaning
+	# depending on the caller is how this check ended up asking the build
+	# machine about a build tree and hiding all 154 applications in the
+	# product. See tools/lib/desktop-exec.sh.
+	if ! desktop_exec_present "$d" /; then
+		result tier1 FAIL "desktop:$name" \
+			"Exec '$(desktop_exec "$d")' not found ($d)"
 	fi
 done
 say "INFO checked $NDESK desktop entries"
@@ -638,8 +856,17 @@ TMPD=$(mktemp -d /tmp/selftest.XXXXXX)
 
 # The whole window tree, so a new top level window can be spotted no matter
 # how deep it sits.
+#
+# Captured before it is filtered. `xwininfo | grep -o | tr | sort` is a
+# four-stage pipeline where grep can exit early, and this runs inside a $( ) that
+# is compared against a previous result to decide whether an application opened
+# a window at all. If the pipeline returns 141 under pipefail, window_sig
+# returns an empty or truncated signature, `after != before` becomes a coin
+# flip, and tier 4 reports applications as launchable or broken at random.
 window_sig() {
-	as_desktop xwininfo -root -children 2>/dev/null | grep -oE '^\s+0x[0-9a-f]+' | tr -d ' ' | sort
+	local raw
+	raw=$(as_desktop xwininfo -root -children 2>/dev/null || true)
+	printf '%s' "$raw" | grep -oE '^\s+0x[0-9a-f]+' | tr -d ' ' | sort
 }
 
 LAUNCH_TIMEOUT=${LAUNCH_TIMEOUT:-60}
@@ -701,6 +928,28 @@ launch_test() {
 # The curated set from tasks.list, and only that: audio, video, graphics.
 # Nothing here is a general desktop application, because PuralvOS does not ship
 # them. A menu entry that tests a stripped application is a false failure.
+#
+# This list mirrors tasks.list. Every entry below is in ubuntustudio-audio,
+# ubuntustudio-video or ubuntustudio-graphics.
+#
+# What used to be here and is not, each with why:
+#
+#   amsn          an instant messenger. Not a discipline; a general desktop
+#                 application that came along with the base.
+#   pocketsphinx  a speech recognition demo.
+#   yatm          a network traffic meter.
+#   harmonoid     a metronome from ubuntu-edu-music, which tasks.list leaves out
+#                 until PuralvOS has an education story. kmetronome stays: it
+#                 is in the image as an audio tool, and a metronome is
+#                 something an audio workstation uses.
+#   darktable     photography, and publishing. tasks.list excludes
+#   rawtherapee   ubuntustudio-photography and ubuntustudio-publishing on
+#   mypaint       purpose, so listing them here bought three "not installed"
+#   scribus       SKIP lines on every boot. Noise, not signal.
+#
+# No entry here is a game and none lives in /usr/games, because PuralvOS ships
+# no games. That directory exists in the image and is empty: dpkg creates it and
+# nothing in this product ever puts anything in it.
 TESTS=(
 # audio
 "ardour:ardour"
@@ -712,12 +961,8 @@ TESTS=(
 "musescore:musescore3"
 "musescore4:musescore4"
 "rose:rose"
-"amsn:amsn"
 "tuxguitar:tuxguitar"
-"pocketsphinx:pocketsphinx_continuous"
-"harmonoid:harmonoid"
 "kmetronome:kmetronome"
-"yatm:yatm"
 "kmix:kmix"
 "pavucontrol:pavucontrol"
 # video
@@ -739,19 +984,15 @@ TESTS=(
 "gimp:gimp"
 "inkscape:inkscape"
 "krita:krita"
-"darktable:darktable"
-"scribus:scribus"
 "freecad:freecad"
 "openscad:openscad"
 "kdenlive-effects:kdenlive"
-"rawtherapee:rawtherapee"
-"mypaint:mypaint"
 )
 
 for t in "${TESTS[@]}"; do
 	n=${t%%:*}; c=${t#*:}
 	bin=${c%% *}
-	if ! command -v "$bin" >/dev/null 2>&1 && ! test -x "/usr/games/$bin"; then
+	if ! binary_present "$bin"; then
 		result tier4 SKIP "$n" "$bin not installed"
 		continue
 	fi
@@ -776,11 +1017,10 @@ for d in $(list_desktops); do
 	[ -z "$name" ] && name=$(basename "$d" .desktop)
 	case "$launched" in *" $name "*) continue ;; esac
 
-	bin=$(exec_from_desktop "$d")
+	bin=$(desktop_exec "$d")
 	[ -z "$bin" ] && continue
 
-	if ! command -v "$bin" >/dev/null 2>&1 && ! test -x "/usr/games/$bin" &&
-	   ! test -x "/usr/local/games/$bin" && ! test -x "/usr/bin/$bin"; then
+	if ! binary_present "$bin"; then
 		result tier4 SKIP "menu:$name" "$bin not installed"
 		continue
 	fi
@@ -827,17 +1067,22 @@ console_test() {
 	fi
 }
 
+# The console programs that belong to the product: audio, video, graphics.
+#
+# weechat and cmail were in this list. They are an IRC client and a mail reader,
+# which is neither audio, video nor graphics, and tasks.list excludes the general
+# desktop applications they arrived with. The menu sweep above still reaches
+# them if they are still installed, so dropping them here does not hide them.
+#
 # pamix is a curses mixer: it draws on a terminal and never opens a window, so
 # it is checked here and not with the graphical applications.
-for t in "weechat:weechat --version" \
-	 "cmail:cmail -?" \
-	 "timidity:timidity -h" \
+for t in "timidity:timidity -h" \
 	 "alsamixer:alsamixer -h" \
 	 "display:display -version" \
 	 "pamix:pamix -h"; do
 	n=${t%%:*}; c=${t#*:}
 	bin=${c%% *}
-	if ! command -v "$bin" >/dev/null 2>&1 && ! test -x "/usr/games/$bin"; then
+	if ! binary_present "$bin"; then
 		result tier4 SKIP "$n" "$bin not installed"
 		continue
 	fi
