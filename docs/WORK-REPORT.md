@@ -276,3 +276,47 @@ sha256 `805a8f1ced8a734238844c2c8e395857a28951f933084242ff3d6f62153c11fa`.
 The final image is 92 MiB smaller than stock while also carrying TONE3000 in
 four plugin formats and the realtime kernel's modules. Booted as brand7:
 desktop at 59.9 s, every tier 0/2/3 check PASS, installer active.
+
+### Whiteouts: the layer was hiding nothing
+
+The branding relies on deletions in the top layer — Ubuntu Studio's
+wallpapers, themes, grub menus, documentation. They were not deleted at
+runtime. The build wrote AUFS-style `.wh.<name>` files, and overlayfs does
+not know that convention: a whiteout in its lower layers is a character
+device with major/minor 0/0. The `.wh.` files were packed into the layer,
+ignored by the kernel, and every removed wallpaper and menu entry came back
+in the merged view. The tier 3 checks caught it precisely because they read
+the running system: `ubuntu-wallpapers-remain` and `grub-menus` failed on
+an image whose build log said the files were gone.
+
+The write path now does what overlayfs expects:
+
+- `[ -c "$d/$b" ] || mknod "$d/$b" c 0 0` — a char-device tombstone per
+  removed path, and stock tombstones already present in the tree are staged
+  through tar untouched (they are regular entries to tar, not something to
+  recreate);
+- the "does this remove cover this path" test walks the *ancestors*, because
+  mknod needs the parent directory to exist and the parent may itself be a
+  tombstone;
+- the single-remembered-path optimisation was removed: `gone.list` is sorted,
+  but `usr/share/doc/dracut-config-generic` sorts between
+  `usr/share/doc/dracut` and `usr/share/doc/dracut/config` (`-` is 0x2d,
+  `/` is 0x2f), so one remembered path skipped the `dracut` tombstone and the
+  build died with `mkdir: cannot create directory '.../usr/share/doc/dracut':
+  File exists`;
+- a parent-restore pass written for that failure was itself the bug and was
+  deleted: re-creating directories at whiteout paths put empty directories
+  back into the layer, and overlayfs merged them with the lower ones
+  (themes/ubuntustudio reappeared as an empty tree);
+- the existence test is `[ -e ] || [ -L ]`, so dangling symlinks are not
+  mistaken for absent files.
+
+Proof in the brand3 boot: `ubuntu-wallpapers-remain`, `grub-menus` and
+`iso-label` all PASS against the merged live filesystem, the packed layer
+holds 165 char-device whiteouts (including the stock ones) and zero `.wh.`
+files.
+
+Two checks were also repaired so the next failure of this kind reports itself:
+`iso-label` falls back to `/cdrom/.disk/info` when the installed-system file
+is absent, and `grub-menus` names the files it read instead of only saying
+the result was wrong.
