@@ -149,3 +149,13 @@ memtest86+
 # music theory tools. It is not in tasks.list, and the self test's curated
 # launch list mirrors tasks.list rather than listing them and skipping.
 ubuntu-edu-music
+
+# --- puredata (Pd) ---------------------------------------------------------
+#
+# Pure Data is a visual programming language for multimedia. While it is an
+# audio tool, it is not required for the core audio, video, and graphics
+# workstation use case. Users who need it can install it separately.
+puredata
+puredata-data
+puredata-doc
+puredata-utils

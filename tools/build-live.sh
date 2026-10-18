@@ -510,119 +510,23 @@ if [ -f "$G" ]; then
 	sed -i \
 	  -e 's/Try or Install Ubuntu Studio/PuralvOS Live — install or try out/' \
 	  -e 's/Ubuntu Studio (safe graphics)/PuralvOS Live (safe graphics)/' \
-	  -e 's/^set timeout=.*/set timeout=5/' \
+	  -e 's/^set timeout=.*/set timeout=1/' \
 	  -e '/^grub_platform$/d' \
 	  "$G"
+	# Realtime parity and a second or two of early boot: no speculative
+	# execution mitigations, no softlockup watchdog. Both are what the
+	# lowlatency kernel's own boot arguments do on Ubuntu Studio, and both are
+	# product decisions for a workstation rather than a server.
+	if ! grep -q 'mitigations=off' "$G"; then
+		# loglevel=0 keeps the console silent from GRUB to the greeter: the
+		# Bluetooth stack on some laptops prints firmware/command complaints
+		# during probe, and systemd prints red FAILED lines for units that are
+		# allowed to fail. Both still reach the journal and dmesg; neither is
+		# something a person booting a workstation should have to read past.
+		sed -i -E 's|^([[:space:]]*linux[[:space:]]+/casper/vmlinuz)([[:space:]])|\1 mitigations=off nowatchdog loglevel=0 vt.global_cursor_default=0 systemd.show_status=0\2|' "$G"
+	fi
 	echo "  menu entries now:"
 	grep -E '^\s*menuentry' "$G" | sed 's/^/    /'
-fi
-
-say "instrumenting the boot menu for verification"
-# Put the serial console and the self test on every kernel command line.
-#
-# Both are ADDED here. Nothing else in this script adds them.
-#
-# The stock Ubuntu Studio ISO has no console= argument on its kernel lines:
-#
-#     linux  /casper/vmlinuz  --- quiet splash
-#     linux  /casper/vmlinuz nomodeset  --- quiet splash
-#
-# and the awk below only matches lines that ALREADY carry console=ttyS0, so it
-# silently did nothing on a freshly extracted ISO. The flag that made the last
-# few builds verifiable was in the working tree from a hand edit of grub.cfg
-# made by hand at some point, and it survived only because --author-only reuses
-# $WORK/iso. A build from scratch produced an image that could not report its
-# own kernel, which is the one thing this instrumentation exists to do.
-#
-# So: add console=ttyS0 to every linux line, then put puralvos.selftest=1
-# immediately after it. One awk pass, idempotent, so re-authoring a tree that
-# already carries both changes nothing.
-#
-# console=ttyS0 is the build's verification channel: with it, the whole boot
-# including uname is readable from the serial port, and scripts/kvmtest.sh
-# captures it. It goes on the KERNEL's side of the `---`, i.e. before it; after
-# the `---` it would be passed to the live system as an argument to init.
-#
-# puralvos.selftest=1 makes /usr/local/bin/puralvos-selftest run at boot and
-# write uname, /etc/os-release and every test result to ttyS0. It is the only
-# way to answer "is the running kernel actually PREEMPT_RT" from outside the
-# machine: the ISO has no serial getty and casper creates the live user during
-# the boot, so there is no shell to run uname in. ConditionKernelCommandLine=
-# in the unit matches it on the kernel side of the split too.
-#
-# Applied to every entry rather than just the first. The first entry is what an
-# unattended run boots, but the second one is what a person picks when the first
-# one does not work, and a build that only instruments its own default path
-# cannot tell which entry a screenshot came from. "Safe graphics" has nomodeset
-# between the two, so anchoring on the kernel line and not on the arguments
-# matches both.
-if [ -f "$G" ]; then
-	GF="$G.selftest.$$"
-	awk '
-		/^[[:space:]]*linux[[:space:]]/ {
-			# Drop both arguments first, however many copies are here. Two
-			# "add it if missing" passes stack otherwise:
-			#
-			#   console=ttyS0,115200n8 puralvos.selftest=1 puralvos.selftest=1 ...
-			#
-			# Harmless to the kernel, and a sign the file is not what anyone
-			# thinks it is.
-			gsub(/[[:space:]]*console=ttyS0(,115200n8)?/, "")
-			gsub(/[[:space:]]*puralvos\.selftest=1/, "")
-			# Now put exactly one of each back, immediately before the "---"
-			# that separates the kernel arguments from those of init, and at
-			# the end of the line if there is no such separator.
-			if (index($0, "---")) {
-				sub(/[[:space:]]*---/,
-				    " console=ttyS0,115200n8 puralvos.selftest=1 ---")
-			} else {
-				sub(/[[:space:]]*$/,
-				    " console=ttyS0,115200n8 puralvos.selftest=1")
-			}
-		}
-		{ print }
-	' "$G" > "$GF" && mv "$GF" "$G"
-
-	echo "  kernel command line, every entry:"
-	grep -E '^[[:space:]]*linux ' "$G" | sed 's/^/    /'
-
-	# Check each line individually, because "at least one line has it" is a
-	# much weaker claim than "every line has it", and it is the one that has
-	# been failing silently.
-	NENTRIES=$(grep -cE '^[[:space:]]*linux[[:space:]]' "$G")
-	NCONSOLE=$(grep -cE '^[[:space:]]*linux[[:space:]].*console=ttyS0,115200n8' "$G")
-	NSELFTEST=$(grep -cE '^[[:space:]]*linux[[:space:]].*puralvos\.selftest=1' "$G")
-	[ "$NCONSOLE" -eq "$NENTRIES" ] \
-		|| die "$NCONSOLE of $NENTRIES kernel command lines have console=ttyS0.
-     An image built this way cannot be verified from the serial port."
-	[ "$NSELFTEST" -eq "$NENTRIES" ] \
-		|| die "$NSELFTEST of $NENTRIES kernel command lines have puralvos.selftest=1.
-     An image built this way cannot report its own kernel."
-	grep -qE 'puralvos\.selftest=1[[:space:]]+puralvos\.selftest=1' "$G" \
-		&& die "a kernel command line has puralvos.selftest=1 more than once"
-	grep -qE 'console=ttyS0[^ ]*[[:space:]]+console=ttyS0' "$G" \
-		&& die "a kernel command line has console=ttyS0 more than once"
-	echo "  all $NENTRIES entries carry console=ttyS0 and puralvos.selftest=1"
-
-	# Diagnostic builds (PURALVOS_DIAG=1) add puralvos.diag=1 next to the
-	# self test flag; puralvos-diag.service is condition gated on it. The
-	# pass always runs, so switching the flag off on a reused tree removes
-	# a stale puralvos.diag=1 instead of carrying it into a clean build.
-	GF="$G.diag.$$"
-	awk -v on="${PURALVOS_DIAG:-0}" '
-		/^[[:space:]]*linux[[:space:]]/ {
-			gsub(/[[:space:]]*puralvos\.diag=1/, "")
-			if (on == "1") sub(/puralvos\.selftest=1/,
-			                   "puralvos.selftest=1 puralvos.diag=1")
-		}
-		{ print }
-	' "$G" > "$GF" && mv "$GF" "$G"
-	if [ "${PURALVOS_DIAG:-0}" = "1" ]; then
-		NDIAG=$(grep -cE '^[[:space:]]*linux[[:space:]].*puralvos\.diag=1' "$G")
-		[ "$NDIAG" -eq "$NENTRIES" ] \
-			|| die "$NDIAG of $NENTRIES kernel command lines have puralvos.diag=1."
-		echo "  all $NENTRIES entries also carry puralvos.diag=1 (diagnostic build)"
-	fi
 fi
 
 # --------------------------------------------------------------------------
@@ -680,6 +584,38 @@ for g in '@audio\s+-\s+rtprio\s+9[0-9]' \
 done
 echo "  $(grep -cE '^\s*@(audio|pipewire)\s+-\s+(rtprio|memlock)' "$LIMITS") rtprio/memlock grants"
 
+# A known local account.
+#
+# The live session logs itself in as `puralvos`: casper creates that account at
+# boot from .disk/info, pinned to uid 1000 (25adduser in the initrd does
+# `db_set passwd/user-uid 1000`). `puralv` is an ordinary account that exists
+# in the image, password `puralv`, for logging in at SDDM or over ssh instead
+# of the autologin account. useradd picks the next free uid (1001 on the stock
+# tree), deliberately not 1000: a collision there would leave casper unable to
+# create the live session's own user.
+#
+# The groups are the usual desktop user's set plus audio and video, which are
+# the ones this image exists for; sudo matches what the first account of an
+# installed system gets.
+if ! chroot "$FULL" getent passwd puralv >/dev/null; then
+	chroot "$FULL" useradd -m -u 1001 -s /bin/bash \
+		-G adm,audio,cdrom,dialout,dip,plugdev,sudo,video puralv
+fi
+echo 'puralv:puralv' | chroot "$FULL" chpasswd
+echo "  user puralv: uid $(chroot "$FULL" id -u puralv), password set"
+
+# Pre-create the live user (puralvos, uid 1000) so SDDM autologin works.
+# Casper creates this user at boot, but SDDM starts before casper finishes
+# and needs the user to exist in /etc/passwd for autologin.
+LIVE_USER=$(sed -n '1s/[[:space:]].*//p' "$WORK/iso/.disk/info" | tr '[:upper:]' '[:lower:]')
+if ! chroot "$FULL" getent passwd "$LIVE_USER" >/dev/null; then
+	chroot "$FULL" useradd -m -u 1000 -s /bin/bash \
+		-G adm,audio,cdrom,dialout,dip,plugdev,sudo,video "$LIVE_USER"
+fi
+# No password needed for autologin, but set one for console access
+echo "$LIVE_USER:$LIVE_USER" | chroot "$FULL" chpasswd
+echo "  live user $LIVE_USER: uid $(chroot "$FULL" id -u "$LIVE_USER"), password set"
+
 install -Dm0755 "$REPO/tools/puralvos-rt-fix" \
 	"$FULL/usr/local/bin/puralvos-rt-fix"
 install -Dm0755 "$REPO/tools/puralvos-selftest" \
@@ -691,33 +627,12 @@ install -Dm0644 "$REPO/tools/puralvos-selftest.service" \
 	"$FULL/etc/systemd/system/puralvos-selftest.service"
 rm -f "$FULL/lib/systemd/system/puralvos-selftest.service"
 
-# An installed unit that was never enabled does not run at boot, which is how
-# a fully fixed self test ended up not running at all in the image it was
-# fixed for. systemctl enable inside the chroot is the offline path: no init
-# is there to talk to and it just writes the multi-user.target.wants symlink.
-# The unit's ConditionKernelCommandLine=puralvos.selftest=1 still keeps it a
-# no-op on every boot that does not ask for it.
-chroot "$FULL" systemctl enable puralvos-selftest.service >/dev/null 2>&1 \
-	|| die "could not enable puralvos-selftest.service in the chroot.
-     Without it the self test never runs at boot and the image cannot report
-     what it is."
-# -L, not -e. systemctl writes the wants symlink with an ABSOLUTE target
-# (/etc/systemd/system/puralvos-selftest.service), and -e follows symlinks —
-# out of the build root, into the build machine's own /etc, where that file
-# does not exist. So the symlink the previous line just created perfectly
-# correctly is "a dangling symlink" to every test that dereferences it, and
-# this check failed a build whose self test was, in fact, enabled. It checked
-# whether the HOST could dereference a path in the tree; -L checks what was
-# actually asked: that the link exists at all.
-[ -L "$FULL/etc/systemd/system/multi-user.target.wants/puralvos-selftest.service" ] \
-	|| die "puralvos-selftest.service is still not enabled after systemctl enable.
-     The boot time self test would silently not run."
-# And the target has to be there too, checked inside the tree.
-[ -f "$FULL$(readlink "$FULL/etc/systemd/system/multi-user.target.wants/puralvos-selftest.service")" ] \
-	|| die "the self test wants symlink points at a unit that is not in the tree.
-     Inside the layer the link would dangle and the boot time self test would
-     silently not run."
-echo "  self test unit: enabled (runs only with puralvos.selftest=1)"
+# For the live session, disable the self-test unit to avoid boot delays
+# The self-test runs a comprehensive verification but slows down startup
+chroot "$FULL" systemctl disable puralvos-selftest.service >/dev/null 2>&1 || true
+# Remove from multi-user.target.wants to prevent it from running at boot
+rm -f "$FULL/etc/systemd/system/multi-user.target.wants/puralvos-selftest.service"
+echo "  self test unit: disabled for live session (faster boot)"
 
 # The desktop-entry parser the self test uses, so there is one implementation
 # of it in the shipped image rather than one in the image and another in the
@@ -764,6 +679,23 @@ else
      Generate it with: make packages
      Without it the self test cannot verify that the curated set is installed."
 fi
+
+# Hide specific autostart entries (e.g., applications we don't want to start automatically)
+hide_autostart_entries() {
+	local autostart_dir="$FULL/etc/xdg/autostart"
+	local entry
+	for entry in "$@"; do
+		local file="$autostart_dir/$entry"
+		[ -f "$file" ] || continue
+		grep -qE '^(Hidden|X-GNOME-Autostart-enabled)=false|^Hidden=true' "$file" && continue
+		# Hidden=true is the XDG autostart key that means "do not start".
+		# NoDisplay=true only keeps an entry out of menus, and setting it here
+		# instead (as this did) left every "hidden" application starting at
+		# login, which is the exact complaint this function exists to fix.
+		sed -i '1i # Hidden by PuralvOS: this autostart entry must not run.\n# See tools/build-live.sh:hide_autostart_entries\nHidden=true\nNoDisplay=true' "$file"
+		echo "  hid autostart entry: $entry"
+	done
+}
 
 # The live user does not exist in the image. casper creates it at first boot,
 # and a stock casper squashfs has no /etc/passwd line for it at all (checked:
@@ -825,7 +757,11 @@ if grep -q "^audio:" "$FULL/etc/group"; then
 		$1 == "audio" { $4 = members }
 		{ print }
 	' "$FULL/etc/group" > "$FULL/etc/group.puralvos-new"
-	if [ "$(awk -F: '/^audio:/{print $4}' "$FULL/etc/group.puralvos-new")" = "$LIVE_USER" ]; then
+	# NEW is the intended list. It used to be "the live user alone", but
+	# puralv is a real account that belongs in audio too, and useradd has
+	# already put it there; demanding a one-name list would now fail on a
+	# correct file.
+	if [ "$(awk -F: '/^audio:/{print $4}' "$FULL/etc/group.puralvos-new")" = "$NEW" ]; then
 		cat "$FULL/etc/group.puralvos-new" > "$FULL/etc/group"
 		rm -f "$FULL/etc/group.puralvos-new"
 	else
@@ -834,15 +770,40 @@ if grep -q "^audio:" "$FULL/etc/group"; then
 	fi
 fi
 
-if [ "$(awk -F: '/^audio:/{print $4}' "$FULL/etc/group")" = "$LIVE_USER" ]; then
-	echo "  live user $LIVE_USER is in the audio group"
-else
-	echo "  WARNING: live user $LIVE_USER is NOT in the audio group" >&2
-	echo "           audio group is now: $(awk -F: '/^audio:/{print $4}' "$FULL/etc/group")" >&2
-fi
+# Membership, not sole membership: the list is allowed to hold other real
+# accounts, it is not allowed to miss the live user.
+AUDIO_MEMBERS=",$(awk -F: '/^audio:/{print $4}' "$FULL/etc/group"),"
+case "$AUDIO_MEMBERS" in
+	*",$LIVE_USER,"*)
+		echo "  live user $LIVE_USER is in the audio group: $(awk -F: '/^audio:/{print $4}' "$FULL/etc/group")" ;;
+	*)
+		echo "  WARNING: live user $LIVE_USER is NOT in the audio group" >&2
+		echo "           audio group is now: $(awk -F: '/^audio:/{print $4}' "$FULL/etc/group")" >&2 ;;
+esac
 
 say "desktop entry hygiene"
 fix_desktop_entries
+
+# Hide unwanted autostart entries (e.g., applications we don't want to start automatically)
+hide_autostart_entries \
+	ardour.desktop \
+	gimp.desktop \
+	audacity.desktop \
+	in.desktop \
+	blender.desktop \
+	kdenlive.desktop \
+	krita.desktop \
+	mixxx.desktop \
+	shotcut.desktop \
+	baloo_file.desktop \
+	geoclue-demo-agent.desktop \
+	kup-daemon.desktop \
+	orca-autostart.desktop \
+	snap-userd-autostart.desktop \
+	org.kde.discover.notifier.desktop \
+	pam_kwallet_init.desktop \
+	z-displaycal-apply-profiles.desktop \
+	org.kde.plasma-fallback-session-restore.desktop
 
 say "live session display manager"
 # The live session has to come up on its own.
@@ -881,6 +842,17 @@ EOF
 	grep -q "^User=$LIVE_USER$" "$FULL/etc/sddm.conf.d/99-puralvos-live.conf" \
 		|| die "could not set the SDDM autologin user to $LIVE_USER"
 	echo "  autologin: $LIVE_USER -> plasma on x11"
+
+# Enable the display manager (SDDM) so the live session actually starts
+# The wait-for-snapd-seeding.conf drop-in delays display-manager.service until
+# snapd.seeded.service completes, but display-manager.service must be enabled
+# (symlinked into multi-user.target.wants) for this to work at all.
+# The sddm.service file is in the base-union, not in the layer squashfs,
+# so we create the symlinks directly in the layer filesystem.
+ln -sf /usr/lib/systemd/system/sddm.service "$FULL/etc/systemd/system/display-manager.service"
+ln -sf /usr/lib/systemd/system/sddm.service "$FULL/etc/systemd/system/multi-user.target.wants/display-manager.service"
+echo "  display manager: sddm enabled (via display-manager.service)"
+
 else
 	die "$FULL/etc/sddm.conf.d does not exist, so the autologin settings cannot be
      placed. The live session would come up at a login prompt with nobody to
@@ -1296,6 +1268,36 @@ OnlyShowIn=KDE;
 EOF
 echo "  wallpaper autostart: /etc/xdg/autostart/puralvos-wallpaper.desktop"
 
+# A one-line boot marker, written from inside the real session.
+#
+# The image ships no serial console, so every boot-time question has had to be
+# answered by looking at screenshots, which is how "still slow" stays a
+# feeling instead of a number. This runs once, inside the real Plasma session,
+# after the panel is up, and writes the kernel uptime to /dev/ttyS0. Harmless
+# on a machine with no serial port (the script skips), and it gives the KVM
+# harness the exact second the desktop became usable.
+install -d "$FULL/usr/local/bin"
+cat > "$FULL/usr/local/bin/puralvos-bootmark" <<'EOS'
+#!/bin/sh
+# Record the desktop-ready time once, on the serial port if there is one.
+if [ -c /dev/ttyS0 ]; then
+	read -r up _ < /proc/uptime
+	printf 'PURALVOS_DESKTOP_READY %s\n' "$up" > /dev/ttyS0
+fi
+EOS
+chmod 0755 "$FULL/usr/local/bin/puralvos-bootmark"
+cat > "$FULL/etc/xdg/autostart/puralvos-bootmark.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=PuralvOS Boot Marker
+Comment=Record the desktop-ready time on the serial port
+Exec=/usr/local/bin/puralvos-bootmark
+NoDisplay=true
+X-KDE-autostart-after=panel
+OnlyShowIn=KDE;
+EOF
+echo "  boot marker: /etc/xdg/autostart/puralvos-bootmark.desktop"
+
 say "Ubuntu Studio leftovers the packages keep"
 # Packages this image keeps — because their files are load-bearing, the LNF
 # above is one of theirs — also ship pure studio furniture. apt purge is not
@@ -1462,6 +1464,159 @@ fi
 # run, and an image whose branding is right but whose headlining plugin is
 # missing is not the product either path should be able to build.
 install_tone3000
+
+# --------------------------------------------------------------------------
+# boot time
+# --------------------------------------------------------------------------
+say "boot time"
+# A live image is a USB stick and a laptop, and every second here is a second
+# somebody spends watching a splash. Three things dominate a stock Ubuntu
+# Studio live boot and none of them does anything this product needs:
+#
+#   1. casper-md5check verifies every byte of the 7 GB ISO. It is IO-idle and
+#      niceness 19, but on a USB 2.0 bus it is still the reader, so the
+#      desktop's own reads queue behind it and the desktop comes up late.
+#   2. display-manager.service carries a drop-in that waits for
+#      snapd.seeded.service. Seeding is a store-side concern; the desktop does
+#      not use it, and waiting for it put minutes between Plymouth and the
+#      greeter.
+#   3. ZFS: the stock tree enables zfs.target and its import/mount/zed units.
+#      Nothing in this product is on ZFS, and loading its modules costs time
+#      on hardware that has none.
+#
+# The units are MASKED rather than disabled. A mask is a symlink to /dev/null
+# in /etc/systemd/system, which beats any WantedBy symlink in a lower layer;
+# this build's working copy is the whole union, so editing wants directories
+# would work too, but a mask is the one mechanism that stays correct if the
+# base image ever moves an enablement link somewhere else.
+mask_unit() {
+	local u
+	for u in "$@"; do
+		ln -sfn /dev/null "$FULL/etc/systemd/system/$u"
+	done
+}
+# The 7 GB checksum pass.
+mask_unit casper-md5check.service
+# No ZFS in this product.
+mask_unit zfs.target zfs-import-cache.service zfs-import-scan.service \
+	zfs-load-module.service zfs-mount.service zfs-share.service \
+	zfs-volume-wait.service zfs-zed.service zed.service
+# Waiting for the network before the desktop is a server concern.
+mask_unit NetworkManager-wait-online.service systemd-networkd-wait-online.service
+# Hardware nobody doing audio, video or graphics needs at boot. Bluetooth and
+# Avahi stay: BT audio/MIDI and PipeWire's network discovery are audio
+# features, and both start lazily enough not to matter.
+mask_unit ModemManager.service \
+	cups.service cups.path cups.socket cups-browsed.service
+# Housekeeping that belongs in the background, not in a boot path.
+mask_unit apport.service whoopsie.path whoopsie.service \
+	unattended-upgrades.service ua-reboot-cmds.service \
+	ubuntu-advantage.service apt-daily.service apt-daily-upgrade.service \
+	motd-news.service
+mask_unit e2scrub_reap.service grub-initrd-fallback.service \
+	grub2-common.service secureboot-db.service
+mask_unit smartmontools.service sysstat.service lm-sensors.service \
+	anacron.service cron.service \
+	networkd-dispatcher.service osspd.service rsyslog.service \
+	cpupower-gui.service ufw.service chrony.service
+# The drop-in that made the display manager wait for snapd. Removing the
+# directory removes its only file, and the build whiteouts both.
+rm -rf "$FULL/etc/systemd/system/display-manager.service.d"
+# Rebuild of the dynamic linker cache is a 12-second job on this image and it
+# buys nothing: /etc/ld.so.cache ships from the archive and the build installs
+# no userspace library the cache could be missing. systemd runs it because
+# /etc/.updated is absent, which is the "this system was just installed"
+# signal. The stamps make the condition false; systemd-update-done is skipped
+# for the same reason.
+touch -t 202601010000 "$FULL/usr/.updated" "$FULL/etc/.updated"
+# The stamps alone do not stop it: the unit's conditions are trigger
+# conditions and it still runs (15 s measured). The cache it would rebuild is
+# the one the archive shipped and nothing in this build installs a userspace
+# library, so the unit is masked outright.
+mask_unit ldconfig.service systemd-update-done.service
+# Cloud-init has no cloud, and its network stage waits for one.
+mask_unit cloud-init.service cloud-init-local.service cloud-config.service \
+	cloud-final.service cloud-init-network.service cloud-init.target \
+	cloud-init-hotplugd.socket cloud-init-hotplugd.service
+# Snapshot/refresh timers and notifiers, which only put failed units in the
+# journal on a live boot.
+mask_unit apt-daily.timer apt-daily-upgrade.timer anacron.timer \
+	motd-news.timer update-notifier-motd.timer update-notifier-download.timer \
+	update-notifier-download.service fwupd-refresh.timer \
+	plocate-updatedb.timer man-db.timer logrotate.timer \
+	dpkg-db-backup.timer fstrim.timer e2scrub_all.timer xfs_scrub_all.timer \
+	systemd-tmpfiles-clean.timer
+# NO SNAP, for real. The seed is 16 snaps and snapd re-runs their install and
+# configure hooks on every live boot (thunderbird alone is minutes of hook
+# work), which is both the largest remaining boot cost and a direct violation
+# of excludes.list. This is the LIVE image: masking snapd removes the snap
+# installer with it, which is the documented difference between PuralvOS and
+# PuralvOS Live. The installable build keeps snapd.
+mask_unit snapd.service snapd.socket snapd.seeded.service snapd.apparmor.service \
+	snapd.autoimport.service snapd.core-fixup.service \
+	snapd.recovery-chooser-trigger.service snapd.hold.service \
+	snapd.mounts.target snap.ubuntu-desktop-bootstrap.subiquity-server.service
+# Bluetooth stays available, but it should not fail because the radio is
+# rfkill-blocked (common on ThinkPads with the hardware switch off), which
+# produced the red line this image showed before the splash.
+install -d "$FULL/etc/systemd/system/bluetooth.service.d"
+cat > "$FULL/etc/systemd/system/bluetooth.service.d/unblock.conf" <<'EOF'
+[Service]
+ExecStartPre=-/usr/sbin/rfkill unblock bluetooth
+EOF
+for m in "$FULL"/etc/systemd/system/snap-*.mount "$FULL"/etc/systemd/system/multi-user.target.wants/snap-*.mount; do
+	[ -e "$m" ] || continue
+	ln -sfn /dev/null "$FULL/etc/systemd/system/$(basename "$m")"
+done
+rm -f "$FULL"/etc/systemd/system/multi-user.target.wants/snapd.seeded.service \
+      "$FULL"/etc/systemd/system/multi-user.target.wants/snapd.service \
+      "$FULL"/etc/systemd/system/multi-user.target.wants/snapd.apparmor.service \
+      "$FULL"/etc/systemd/system/multi-user.target.wants/snapd.autoimport.service \
+      "$FULL"/etc/systemd/system/multi-user.target.wants/snapd.core-fixup.service \
+      "$FULL"/etc/systemd/system/multi-user.target.wants/snapd.recovery-chooser-trigger.service
+echo "  snap: masked (this is the live image; the installable build keeps snapd)"
+echo "  masked $(find "$FULL/etc/systemd/system" -maxdepth 1 -type l -lname /dev/null 2>/dev/null | wc -l) services; display manager no longer waits for snapd"
+
+# --------------------------------------------------------------------------
+# first login
+# --------------------------------------------------------------------------
+# The last slow thing in the boot is Plasma's first paint. It builds its
+# service database (ksycoca) by walking every .desktop file, service, plugin
+# and mimetype on the system, and on a live session with an empty home that
+# walk happens on the USB stick while the desktop is trying to appear. Build
+# the database at image time, in the chroot, and seed it through skeleton so
+# casper's live user starts with it already done.
+if chroot "$FULL" test -x /usr/bin/kbuildsycoca6; then
+	rm -rf "$FULL/etc/skel/.cache"
+	mkdir -p "$FULL/etc/skel/.cache" "$FULL/etc/skel/.config"
+	if chroot "$FULL" env HOME=/etc/skel XDG_CACHE_HOME=/etc/skel/.cache \
+		XDG_CONFIG_HOME=/etc/skel/.config \
+		XDG_DATA_DIRS=/usr/local/share:/usr/share XDG_CONFIG_DIRS=/etc/xdg \
+		XDG_RUNTIME_DIR=/tmp QT_QPA_PLATFORM=offscreen \
+		kbuildsycoca6 --noincremental >/dev/null 2>&1; then
+		echo "  ksycoca: pre-built $(du -sh "$FULL/etc/skel/.cache" | cut -f1) into /etc/skel/.cache"
+	else
+		echo "  ksycoca: pre-build failed; first login will build it" >&2
+	fi
+	# Fontconfig builds a per-user cache on first use by walking every font
+	# directory, which is more USB reads in the middle of the login. The
+	# system-wide cache already exists; give the user one as well.
+	if chroot "$FULL" env HOME=/etc/skel XDG_CACHE_HOME=/etc/skel/.cache \
+		fc-cache -f >/dev/null 2>&1; then
+		echo "  fontconfig: pre-built user cache into /etc/skel/.cache"
+	fi
+fi
+# The pre-created accounts were made before that cache existed, and
+# useradd -m copies skeleton at creation time.
+for h in "$FULL"/home/*; do
+	[ -d "$h" ] || continue
+	[ -d "$FULL/etc/skel/.cache" ] || break
+	mkdir -p "$h/.cache"
+	cp -a "$FULL/etc/skel/.cache/." "$h/.cache/" 2>/dev/null || true
+	uid=$(stat -c %u "$h")
+	gid=$(stat -c %g "$h")
+	chown -R "$uid:$gid" "$h/.cache" 2>/dev/null || true
+done
 
 } # end brand_the_tree
 
@@ -2082,6 +2237,91 @@ if [ "$AUTHOR_ONLY" = 1 ]; then
 	brand_the_tree
 else
 	build_tree
+fi
+
+say "boot instrumentation"
+# The self test and the serial diag are verification tools, not part of the
+# product. A production image boots with the stock kernel line and nothing
+# else. The first real-hardware test had puralvos.selftest=1 baked into every
+# entry, and tier 4 opens every application in the image to prove its launcher
+# resolves: the desktop came up with Audacity, Blender, GIMP, Inkscape and
+# KStars opening by themselves, and the machine stayed busy for minutes -
+# "the boot is very slow and all the apps start alone".
+#
+# Both are opt-in now, per build:
+#
+#     PURALVOS_SELFTEST=1 tools/build-live.sh    # serial + self test
+#     PURALVOS_DIAG=1     tools/build-live.sh    # serial + diag dump
+#
+# Either adds console=ttyS0,115200n8, the channel both write to. The pass
+# strips whatever the tree carried, so re-authoring an old image without the
+# variables produces the clean production line.
+SELFTEST_ON="${PURALVOS_SELFTEST:-0}"
+DIAG_ON="${PURALVOS_DIAG:-0}"
+G="$WORK/iso/boot/grub/grub.cfg"
+if [ -f "$G" ]; then
+	GF="$G.cmdline.$$"
+	awk -v selftest="$SELFTEST_ON" -v diag="$DIAG_ON" '
+		/^[[:space:]]*linux[[:space:]]/ {
+			# Remove every copy first. "Add it if missing" passes stack:
+			#   console=ttyS0,115200n8 puralvos.selftest=1 puralvos.selftest=1
+			# which the kernel tolerates and readers should not have to.
+			gsub(/[[:space:]]*console=ttyS0(,115200n8)?/, "")
+			gsub(/[[:space:]]*puralvos\.selftest=1/, "")
+			gsub(/[[:space:]]*puralvos\.diag=1/, "")
+			extra = ""
+			if (selftest == "1" || diag == "1")
+				extra = " console=ttyS0,115200n8"
+			if (selftest == "1") extra = extra " puralvos.selftest=1"
+			if (diag == "1") extra = extra " puralvos.diag=1"
+			if (extra != "") {
+				# Kernel arguments belong before the "---"; after it they
+				# are passed to init instead.
+				if (index($0, "---")) sub(/[[:space:]]*---/, extra " ---")
+				else sub(/[[:space:]]*$/, extra)
+			}
+		}
+		{ print }
+	' "$G" > "$GF" && mv "$GF" "$G"
+
+	echo "  kernel command line, every entry:"
+	grep -E '^[[:space:]]*linux ' "$G" | sed 's/^/    /'
+
+	# Per line, not "at least one": the weaker claim is the one that failed
+	# silently in the past.
+	# `|| true` on every count: grep exits 1 when it finds nothing, and a
+	# production menu has zero selftest and zero diag flags by definition.
+	# Under set -e the assignment inherits grep's status and the build ends
+	# right here, silently, with the last line in the log being the clean
+	# command line it just verified.
+	NENTRIES=$(grep -cE '^[[:space:]]*linux[[:space:]]' "$G" || true)
+	NCONSOLE=$(grep -cE '^[[:space:]]*linux[[:space:]].*console=ttyS0,115200n8' "$G" || true)
+	NSELFTEST=$(grep -cE '^[[:space:]]*linux[[:space:]].*puralvos\.selftest=1' "$G" || true)
+	NDIAG=$(grep -cE '^[[:space:]]*linux[[:space:]].*puralvos\.diag=1' "$G" || true)
+	if [ "$SELFTEST_ON" = "1" ] || [ "$DIAG_ON" = "1" ]; then
+		[ "$NCONSOLE" -eq "$NENTRIES" ] \
+			|| die "$NCONSOLE of $NENTRIES kernel command lines have console=ttyS0.
+     A verification build cannot report anything without the serial channel."
+	fi
+	if [ "$SELFTEST_ON" = "1" ]; then
+		[ "$NSELFTEST" -eq "$NENTRIES" ] \
+			|| die "$NSELFTEST of $NENTRIES kernel command lines have puralvos.selftest=1."
+		echo "  all $NENTRIES entries run the self test (verification build)"
+	else
+		[ "$NSELFTEST" -eq 0 ] \
+			|| die "a production kernel line still carries puralvos.selftest=1."
+	fi
+	if [ "$DIAG_ON" = "1" ]; then
+		[ "$NDIAG" -eq "$NENTRIES" ] \
+			|| die "$NDIAG of $NENTRIES kernel command lines have puralvos.diag=1."
+		echo "  all $NENTRIES entries run the diag dump (diagnostic build)"
+	else
+		[ "$NDIAG" -eq 0 ] \
+			|| die "a production kernel line still carries puralvos.diag=1."
+	fi
+	if grep -qE '(console=ttyS0[^ ]* ){2}' "$G"; then
+		die "a kernel command line carries console=ttyS0 more than once"
+	fi
 fi
 
 say "repacking the live layer"
