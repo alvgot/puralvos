@@ -170,12 +170,23 @@ Not done:
 The self test checks for **Ubuntu Studio**, not for the substring `ubuntu`, and
 that distinction is deliberate.
 
-`ID_LIKE=ubuntu` and `UBUNTU_CODENAME=resolute` stay. PuralvOS is a derivative
-of Ubuntu Studio; `ID_LIKE=ubuntu` is what keeps apt and every Ubuntu package
-treating this as an Ubuntu system, and `UBUNTU_CODENAME` is what keeps
-version-locked dependencies resolving. Remove either and the product stops
-working as a derivative — so a check that failed on them would be demanding
-that this stop being a derivative.
+`ID_LIKE="ubuntu debian"` and `UBUNTU_CODENAME=resolute` stay. PuralvOS is a
+derivative of Ubuntu Studio, which is a derivative of Debian; every Debian
+derivative carries the family marker, and Ubuntu itself ships
+`ID_LIKE=debian`. `UBUNTU_CODENAME` is what keeps version-locked dependencies
+resolving. Remove either and the product stops working as a derivative — so a
+check that failed on them would be demanding that this stop being a derivative.
+
+That is not theory: `ID_LIKE=ubuntu` alone broke the installer. apport, which
+the `ubuntu-desktop-bootstrap` snap bundles and imports at startup, computes
+`{ID} | ID_LIKE.split()` and refuses to run unless `debian` is in that set:
+
+    RuntimeError: Could not determine system package manager.
+                  Please file a bug and provide /etc/os-release!
+
+`subiquity-server` died on every boot, `/run/subiquity` never appeared, and
+the installer window showed "Something went wrong" — while the rest of the
+live session worked. The `ID` is ours; the family markers are not negotiable.
 
 The check that failed on them was `grep -qi ubuntu /etc/os-release`, and it had
 failed on every boot of every build. A branding check that cannot pass is a

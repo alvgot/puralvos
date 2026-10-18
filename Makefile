@@ -10,8 +10,9 @@ BASE_URL := https://cdimage.ubuntu.com/ubuntustudio/releases/resolute/release/ub
 SCRIPTS  := scripts
 TOOLS   := tools
 
-.PHONY: help base verify-base kernel brand packages packages-all packages-report \
-	snap-census selftest rt-fix test-booth test-parser live boot-test check
+.PHONY: help base verify-base kernel brand packages packages-all packages-docs \
+	packages-report snap-census selftest rt-fix test-booth test-parser live \
+	boot-test check
 ROOTFS ?= /var/tmp/puralvos-build/layer
 ISO    ?= $(wildcard out/puralvos-live-*.iso)
 
@@ -58,6 +59,13 @@ packages-all: ## write the complete installed package list
 	python3 $(TOOLS)/report-packages.py --all $(ROOTFS) > $(BASE_DIR)/puralvos/packages-installed.txt
 	@wc -l < $(BASE_DIR)/puralvos/packages-installed.txt | sed 's/^/  /'
 	@echo "  packages listed with versions, sorted, one per line"
+
+packages-docs: ## copy the complete package list into the documentation
+	@extra=""; i=$$(ls -1t out/puralvos-live-*.iso 2>/dev/null | head -1); \
+	[ -n "$$i" ] && extra="--iso $$i"; \
+	python3 $(TOOLS)/make-packages-doc.py $$extra \
+		$(BASE_DIR)/puralvos/packages-installed.txt > docs/PACKAGES-INSTALLED.md
+	@echo "  docs/PACKAGES-INSTALLED.md written: $$(wc -l < $(BASE_DIR)/puralvos/packages-installed.txt) packages"
 
 snap-census: ## list the snaps in the built image
 

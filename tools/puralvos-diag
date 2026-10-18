@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# puralvos-diag - write the state of the machine to the serial console.
+#
+# Runs only when the kernel command line says puralvos.diag=1, and only on an
+# image built with PURALVOS_DIAG=1 (the unit is not installed otherwise, so a
+# production image does not carry this at all).
+#
+# It exists for one failure: ubuntu-desktop-bootstrap shows "Something went
+# wrong" several minutes into a live session, its log lives inside the session,
+# and the session is gone by the time the screenshots are read. This dumps that
+# log — and the audio state the self test cannot explain — to ttyS0, where
+# scripts/kvmtest.sh already captures everything.
+#
+# The wait is deliberate: the dump has to describe the machine AFTER the crash
+# window, not before the installer starts.
+
+if [ -w /dev/ttyS0 ]; then
+	OUT=/dev/ttyS0
+else
+	OUT=/dev/console
+fi
+say() { echo "$*" > "$OUT" 2>/dev/null; echo "$*" >&2; }
+sec() { say ""; say "=== $*"; }
+run() {
+	say "\$ $*"
+	"$@" 2>&1 | head -80 | while IFS= read -r l; do say "  $l"; done
+}
+
+SLEEP=${PURALVOS_DIAG_WAIT:-360}
+say "DIAG puralvos-diag: machine state will be dumped in ${SLEEP}s"
+sleep "$SLEEP"
+say "DIAG begin $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+run uname -a
+
+sec "live user"
+run id puralvos
+run getent passwd puralvos
+run getent group audio
+run grep -E '^(audio|pipewire|puralvos):' /etc/group
+
+sec "limits on disk"
+run cat /etc/security/limits.d/30-ubuntustudio-audio.conf
+
+sec "audio daemons"
+PWPID=$(pgrep -u puralvos -x pipewire 2>/dev/null | head -1)
+if [ -n "$PWPID" ]; then
+	say "pipewire pid: $PWPID"
+	run grep -E 'Max realtime|Max locked' "/proc/$PWPID/limits"
+	run ps -L -p "$PWPID" -o rtprio=,comm=
+else
+	say "pipewire is not running"
+fi
+run systemctl is-active rtkit-daemon
+run runuser -u puralvos -- env XDG_RUNTIME_DIR=/run/user/1000 \
+	systemctl --user is-active pipewire pipewire-pulse wireplumber
+
+sec "session"
+run loginctl list-sessions
+run ps -eo user,pid,ppid,ni,rtprio,comm --sort=-rtprio
+
+sec "failed units"
+run systemctl --failed --no-pager
+
+sec "installer"
+# The unit's own journal first: the general grep below fills up with the GUI's
+# once-a-second socket retries and pushes the failure reason out of the tail.
+run systemctl status snap.ubuntu-desktop-bootstrap.subiquity-server --no-pager -l
+run journalctl -b -u snap.ubuntu-desktop-bootstrap.subiquity-server --no-pager
+run ls -la /run/subiquity
+run systemctl is-active snapd
+run sh -c "timeout 20 snap changes 2>&1 | tail -20"
+run sh -c "journalctl -b --no-pager | grep -iE 'bootstrap|subiquity|installer|something went wrong' | head -40"
+run sh -c "if command -v snap >/dev/null; then timeout 20 snap logs ubuntu-desktop-bootstrap 2>&1 | tail -40; else echo 'no snap command'; fi"
+if [ -d /var/log/installer ]; then
+	run ls -la /var/log/installer
+fi
+
+sec "leftovers, all of these should be absent"
+run sh -c "find /usr/share/backgrounds /usr/share/wallpapers \( -iname '*ubuntu*' -o -iname '*studio*' \) 2>/dev/null | head -20"
+run sh -c "ls /boot/grub/themes/ 2>/dev/null"
+run sh -c "find / -xdev -maxdepth 4 -name '.wh.*' 2>/dev/null | head"
+run sh -c "grep -rlisE 'ubuntu[ -]?studio' /boot/grub /EFI/ubuntu 2>/dev/null | head"
+
+sec "machine"
+run free -m
+run uptime
+run sh -c "ps aux --sort=-%mem | head -12"
+
+say ""
+say "DIAG end"

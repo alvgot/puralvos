@@ -2,6 +2,34 @@
 
 Measured from `/var/tmp/puralvos-build/layer`, not from a list somebody wrote down.
 
+## The rule: stock packages, configuration, branding only
+
+Every package in this list is a stock, signed package from an upstream archive,
+at the version that archive publishes. PuralvOS builds no packages, patches no
+packages, forks no packages, and holds nothing back: `apt full-upgrade` on a
+running system takes the whole system to newer versions, at any time, from
+upstream. The design adds exactly one archive beyond Ubuntu's own — Mozilla's,
+for the real Firefox deb (see below) — and it is an ordinary signed apt source,
+not a freeze.
+
+The tuning that makes the image light and fast ([PERFORMANCE.md](PERFORMANCE.md))
+is configuration of those stock packages: `/etc/security/limits.d`, sysctls,
+the CPU governor, udev rules, the kernel command line. Configuration lives in
+`/etc`, so it survives upgrades, and nothing real time audio depends on is a
+patched package file.
+
+The only files PuralvOS itself adds are branding assets and the two tools in
+`/usr/local` (`puralvos-selftest`, `puralvos-rt-fix`), which shadow nothing.
+Where a branded image must touch a file a package owns — a desktop entry's
+`NoDisplay`, the installer's boot service — the change is cosmetic, an upgrade
+may replace it, and that is accepted; the fix is re-running the build, never
+pinning the package.
+
+One piece of software is not a package: the TONE3000 NAM player ships from its
+upstream release tarball, pinned by version and sha256 in `tools/build-live.sh`
+and installed to the standard plugin directories. Updating it is a version
+bump in the build.
+
 ## Totals
 
 | | |
@@ -34,23 +62,26 @@ The largest families, by package-name prefix:
 
 ## The complete list
 
-`base/puralvos/packages-installed.txt` — **all 3360 packages, with versions**,
-one per line, sorted, tab separated, greppable.
+`docs/PACKAGES-INSTALLED.md` — **all 3360 packages, with versions**, one per
+line, sorted, tab separated, greppable. The same list, as the build artifact
+it is first written to, lives at `base/puralvos/packages-installed.txt`; the
+docs copy is the one that ships with the repository.
 
 ```
-$ grep -P '^ardour' base/puralvos/packages-installed.txt
+$ grep -P '^ardour' docs/PACKAGES-INSTALLED.md
 ardour                    1:9.0.0+ds-1ubuntu2
 ardour-data               1:9.0.0+ds-1ubuntu2
 ardour-lv2-plugins        1:9.0.0+ds-1ubuntu2
 ardour-video-timeline     1:9.0.0+ds-1ubuntu2
 
-$ grep -P '^jackd2' base/puralvos/packages-installed.txt
+$ grep -P '^jackd2' docs/PACKAGES-INSTALLED.md
 jackd2                    1.9.22~dfsg-5build1
 jackd2-firewire           1.9.22~dfsg-5build1
 ```
 
-Regenerated with `make packages-all`. It is read out of the built rootfs, so
-it cannot drift from what is actually installed.
+Regenerated with `make packages-all` (the list) and `make packages-docs` (the
+docs copy). It is read out of the built rootfs, so it cannot drift from what
+is actually installed.
 
 Note the versions in that list are the versions **as built today**. Firefox
 shows `1:1snap1-0ubuntu8` because that is what the Ubuntu archive ships — see

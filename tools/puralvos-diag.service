@@ -1,0 +1,19 @@
+[Unit]
+Description=PuralvOS diagnostics dump (runs only with puralvos.diag=1 on the kernel command line)
+Documentation=file:///usr/local/bin/puralvos-diag
+ConditionKernelCommandLine=puralvos.diag=1
+After=multi-user.target display-manager.service
+Wants=display-manager.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/puralvos-diag
+# The script sleeps past the installer's crash window (~6 minutes) before it
+# writes anything; the default 90s TimeoutStartSec would kill it first.
+TimeoutStartSec=1800
+# The script writes to /dev/ttyS0 itself; keep the unit quiet.
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target

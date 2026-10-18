@@ -151,6 +151,166 @@ fix_desktop_entries() {
 	echo "  $hidden menu entr$( [ "$hidden" = 1 ] && echo y || echo ies ) hidden for a missing executable"
 }
 
+# The TONE3000 plugin, the one piece of the image that is a download.
+#
+# TONE3000 (tone3000.com) is the official free NAM player: it browses and
+# plays Neural Amp Modeler captures and impulse responses straight from the
+# catalogue. It is the reason this image can promise a guitar rig without a
+# DAW, so it ships as part of the audio set rather than as an optional extra.
+#
+# It is NOT a distribution package on this archive, which fixes every other
+# decision here:
+#
+#   * The payload is the Linux x64 release tarball from the project's own
+#     GitHub releases, pinned by version AND by sha256. A build that cannot
+#     fetch or verify it stops; it does not ship without the plugin.
+#
+#   * The official install.sh targets ~/.vst3, ~/.lv2, ~/.clap, ~/.local/bin
+#     and the user's XDG data dir. A live image installed for the user who
+#     boots it is the wrong shape: the plugin has to be on the system paths
+#     every host scans, so the formats go to /usr/lib/{vst3,lv2,clap} and the
+#     standalone to /usr/bin. Same files, same layout inside them, installed
+#     once for every user instead of once per user.
+#
+#   * Factory presets land in /etc/skel/.config/TONE3000/Presets/Factory, the
+#     same path the plugin's own installer writes into the home directory,
+#     seeded through skel because casper creates the live user from skel.
+#     A user who installs the system gets them the same way.
+#
+#   * The desktop entry's Exec must be absolute; the tarball's own installer
+#     says so in a comment and generates it at install time. This one is
+#     generated here the same way, for /usr/bin/TONE3000.
+#
+# The version is pinned rather than "latest" on purpose: a plugin update is a
+# change to the product and gets a build log line, not a silent fetch.
+T3K_VERSION="v0.0.12"
+T3K_SHA256="c45ea5d64e6eef991b14f1883a4249ed1a883253db1a9d9f0605e0540aba5fc7"
+T3K_TARBALL="TONE3000-${T3K_VERSION}-linux-x64.tar.gz"
+T3K_URL="https://github.com/tone-3000/tone3000-plugin/releases/download/${T3K_VERSION}/${T3K_TARBALL}"
+
+install_tone3000() {
+	say "TONE3000 plugin (the NAM player this image ships)"
+	local cache="$WORK/downloads" tar="$WORK/downloads/$T3K_TARBALL"
+	local tmp rel got
+	mkdir -p "$cache"
+
+	if [ -f "$tar" ]; then
+		echo "  using cached $T3K_TARBALL"
+	else
+		echo "  fetching $T3K_URL"
+		if command -v curl >/dev/null 2>&1; then
+			curl -fsSL --retry 3 -o "$tar.part" "$T3K_URL" \
+				|| die "could not download the TONE3000 plugin.
+     File:    $T3K_URL
+     The image is supposed to ship it, so this build stops here rather than
+     produce an image that silently misses its NAM player. Rerun when the
+     network allows, or drop the tarball at $tar by hand."
+		elif command -v wget >/dev/null 2>&1; then
+			wget -q -O "$tar.part" "$T3K_URL" \
+				|| die "could not download the TONE3000 plugin (wget). See $T3K_URL"
+		else
+			die "neither curl nor wget is on this machine, so the TONE3000 plugin
+     cannot be fetched. Install one of them."
+		fi
+		mv "$tar.part" "$tar"
+	fi
+
+	got=$(sha256sum "$tar" | cut -d' ' -f1)
+	if [ "$got" != "$T3K_SHA256" ]; then
+		die "the TONE3000 tarball does not match the pinned checksum.
+     File:     $tar
+     Expected: $T3K_SHA256
+     Got:      $got
+     Delete the cached file and rerun if the download was interrupted; if the
+     checksum still differs, the release changed and T3K_VERSION/T3K_SHA256
+     in this script have to be updated together, deliberately."
+	fi
+	echo "  sha256 ok: $T3K_SHA256"
+
+	tmp=$(mktemp -d "$WORK/.t3k.XXXXXX")
+	tar -xzf "$tar" -C "$tmp" \
+		|| die "the TONE3000 tarball did not extract. The cached copy at $tar is corrupt."
+	rel=$(find "$tmp" -maxdepth 1 -mindepth 1 -type d | head -1)
+	[ -n "$rel" ] || { rm -rf "$tmp"; die "extracted TONE3000 tarball has no directory"; }
+	[ -d "$rel/TONE3000.vst3" ] && [ -d "$rel/TONE3000.lv2" ] \
+		&& [ -f "$rel/TONE3000.clap" ] && [ -f "$rel/TONE3000" ] \
+		|| { rm -rf "$tmp"; die "the TONE3000 tarball does not contain the VST3, LV2,
+     CLAP and standalone payload this step installs."; }
+
+	# VST3 and LV2 are bundles (directories); CLAP is a single shared object;
+	# the standalone is an executable. Same modes the official installer uses:
+	# CLAP 0644 because the loader dlopens it, not execs it.
+	rm -rf "$FULL/usr/lib/vst3/TONE3000.vst3" "$FULL/usr/lib/lv2/TONE3000.lv2"
+	install -d "$FULL/usr/lib/vst3" "$FULL/usr/lib/lv2" "$FULL/usr/lib/clap"
+	cp -a "$rel/TONE3000.vst3" "$FULL/usr/lib/vst3/"
+	cp -a "$rel/TONE3000.lv2" "$FULL/usr/lib/lv2/"
+	install -m 0644 "$rel/TONE3000.clap" "$FULL/usr/lib/clap/TONE3000.clap"
+	install -Dm0755 "$rel/TONE3000" "$FULL/usr/bin/TONE3000"
+	echo "  plugin formats: /usr/lib/vst3, /usr/lib/lv2, /usr/lib/clap (STD paths, every DAW scans them)"
+	echo "  standalone:     /usr/bin/TONE3000"
+
+	# Factory presets, in skel, exactly where the plugin's installer puts them
+	# in a home directory. Replace-don't-overlay like the official installer.
+	if compgen -G "$rel/factory-presets/*.t3kpreset" >/dev/null; then
+		install -d "$FULL/etc/skel/.config/TONE3000/Presets/Factory"
+		rm -f "$FULL/etc/skel/.config/TONE3000/Presets/Factory"/*.t3kpreset
+		install -m 0644 "$rel/factory-presets"/*.t3kpreset \
+			"$FULL/etc/skel/.config/TONE3000/Presets/Factory/"
+		echo "  factory presets: $(ls "$rel/factory-presets" | wc -l) -> /etc/skel/.config/TONE3000/Presets/Factory"
+	fi
+
+	# Desktop entry + icon, generated here for the /usr/bin path.
+	install -d "$FULL/usr/share/applications" \
+		"$FULL/usr/share/icons/hicolor/512x512/apps"
+	install -m 0644 "$rel/tone3000.png" \
+		"$FULL/usr/share/icons/hicolor/512x512/apps/tone3000.png"
+	cat > "$FULL/usr/share/applications/tone3000.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=TONE3000
+GenericName=NAM Amp and IR Player
+GenericName[de]=NAM-Verstärker- und IR-Player
+Comment=Play NAM captures and IRs straight from TONE3000
+Comment[de]=NAM-Captures und IRs direkt von TONE3000 spielen
+Exec=/usr/bin/TONE3000
+Icon=tone3000
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+Keywords=NAM;guitar;bass;amp;ir;tone;
+StartupWMClass=TONE3000
+EOF
+	echo "  desktop entry: /usr/share/applications/tone3000.desktop"
+
+	# Pinned to the default panel's favourites, so "installed by default" is
+	# true on the panel and not only in the menu. The panel is built at boot
+	# by ubuntustudio-panel-refresh from a list it only keeps entries of that
+	# actually exist; adding the entry to that list is enough.
+	PR="$FULL/usr/sbin/ubuntustudio-panel-refresh"
+	if [ -f "$PR" ] && ! grep -q 'tone3000.desktop' "$PR"; then
+		sed -i 's|\[6\]="carla.desktop"|[6]="carla.desktop"\n[7]="tone3000.desktop"|' "$PR"
+		echo "  panel: tone3000 pinned in ubuntustudio-panel-refresh favourites"
+	fi
+
+	# Resolve the standalone's libraries against the image being built, not
+	# against this machine, which is also not a media workstation. ldd runs
+	# the loader with LD_TRACE_LOADED_OBJECTS and needs nothing mounted.
+	if command -v chroot >/dev/null 2>&1; then
+		unresolved=$(chroot "$FULL" ldd /usr/bin/TONE3000 2>/dev/null |
+			grep 'not found' || true)
+		if [ -n "$unresolved" ]; then
+			die "the TONE3000 standalone has unresolved libraries IN THE IMAGE:
+$(printf '%s\n' "$unresolved" | sed 's/^/     /')
+     The runtime set is GTK3, ALSA, fontconfig, X11 and libcurl; one of them
+     is missing from the layer. Fix the package list; a plugin that cannot
+     load is worse than one that was never installed."
+		else
+			echo "  ldd: all libraries resolve inside the image"
+		fi
+	fi
+
+	rm -rf "$tmp"
+}
+
 # Everything that makes the live tree PuralvOS rather than Ubuntu Studio.
 #
 # Called by build_tree, and by --author-only directly. It is a separate function
@@ -240,11 +400,21 @@ if [ -f "$FULL/etc/os-release" ]; then
 	# "https://..." contains an unescaped slash, which ends the command early
 	# and fails with "unknown option to `s'" pointing at a character in the
 	# middle of a URL.
+	# ID_LIKE is not decoration. apport — which the installer snap bundles and
+	# imports at startup — decides the host's package manager from
+	# `{ID} | ID_LIKE.split()` and raises "Could not determine system package
+	# manager. Please file a bug and provide /etc/os-release!" unless
+	# "debian" is in that set. ID_LIKE="ubuntu" alone was enough to kill
+	# subiquity-server at every boot: the installer window said "Something
+	# went wrong" and /run/subiquity never appeared, while snapd sat there
+	# happily. Ubuntu itself ships ID_LIKE=debian; every Debian derivative
+	# carries it, and a derivative of a derivative has both. This is the line
+	# between rebranding and breaking the ecosystem the packages expect.
 	brand_os_release() {
 		sed -i -e 's#^NAME=.*#NAME="PuralvOS"#' \
 		       -e 's#^PRETTY_NAME=.*#PRETTY_NAME="PuralvOS 26.04.1 LTS"#' \
 		       -e 's#^ID=.*#ID=puralvos#' \
-		       -e 's#^ID_LIKE=.*#ID_LIKE="ubuntu"#' \
+		       -e 's#^ID_LIKE=.*#ID_LIKE="ubuntu debian"#' \
 		       -e 's#^HOME_URL=.*#HOME_URL="https://github.com/alvgot/puralvos"#' \
 		       -e 's#^SUPPORT_URL=.*#SUPPORT_URL="https://github.com/alvgot/puralvos/issues"#' \
 		       -e 's#^BUG_REPORT_URL=.*#BUG_REPORT_URL="https://github.com/alvgot/puralvos/issues"#' \
@@ -264,7 +434,9 @@ if [ -f "$FULL/etc/os-release" ]; then
 			ln -s ../usr/lib/os-release "$FULL/etc/os-release"
 		fi
 	fi
-	sed -i -e 's/^DISTRIB_NAME=.*/DISTRIB_NAME="PuralvOS"/' \
+	sed -i -e 's/^DISTRIB_ID=.*/DISTRIB_ID=PuralvOS/' \
+	       -e 's/^DISTRIB_NAME=.*/DISTRIB_NAME="PuralvOS"/' \
+	       -e 's/^DISTRIB_DESCRIPTION=.*/DISTRIB_DESCRIPTION="PuralvOS 26.04.1 LTS"/' \
 	       -e 's/^DISTRIB_CODENAME=.*/DISTRIB_CODENAME=puralvos/' \
 	       "$FULL/etc/lsb-release" 2>/dev/null || true
 	BRANDED=$(sed -n 's/^PRETTY_NAME="\(.*\)"$/\1/p' "$OSREL")
@@ -275,20 +447,71 @@ if [ -f "$FULL/etc/os-release" ]; then
 	esac
 fi
 
-# The ISO's own label, which the boot menu and installer show.
+# The login banner. /etc/issue is base-files' and prints
+#
+#     Ubuntu 26.04.1 LTS
+#
+# on every virtual console, which is the first thing anyone sees on a machine
+# with no graphical boot and the thing the serial console of every verification
+# run prints above the login prompt. The self test does not read it, which is
+# exactly why it has to be done here: nothing else was going to.
+#
+# \n and \l are the standard escapes (hostname, tty); they are printed by
+# agetty, not by a shell, so they stay. \S is deliberately absent — it would
+# read the live session's release from the wrong file again.
+for issue in "$FULL/etc/issue" "$FULL/etc/issue.net"; do
+	[ -e "$issue" ] || continue
+	printf 'PuralvOS 26.04.1 LTS \\n \\l\n' > "$issue"
+done
+echo "  issue: $(head -1 "$FULL/etc/issue" 2>/dev/null)"
+
+# The ISO's own label, which the boot menu and installer show. The FIRST
+# WHITESPACE-SEPARATED TOKEN of this file is not decoration: casper reads it
+# as the flavour, and with FLAVOUR unset in its casper.conf (this image's is),
+# casper sets BOTH the live username and the hostname to that token,
+# lowercased. So this line is where the live user's name comes from, and
+# LIVE_USER further down reads it back rather than guessing. The comment in
+# the base casper.conf says it in as many words: "USERNAME and HOSTNAME as
+# specified above won't be honoured and will be set to flavour string".
+#
+# The rest of the line is not free-form either, whatever the first draft of
+# this file assumed ("PuralvOS 26.04.1 LTS - Live amd64" looked tidy and cost
+# a whole verification boot). The desktop installer — ubuntu-desktop-
+# bootstrap, the window the live session opens by itself — parses this file
+# too, and it wants the stock shape:
+#
+#     <Flavour> <version> <LTS?> "<codename>" - Release amd64 (<date>)
+#
+# Its Flutter binary reads the quoted codename (a "get:codeName" symbol and
+# the dynamic "installationTypeTPMInfo<CodeName>" message keys live in
+# libapp.so) and a line without it is not a display problem: the installer
+# fails its parse, shows "Something went wrong" instead of the install
+# screens, and the reason is nowhere on screen. The base image's line is
+# "Ubuntu-Studio 26.04.1 LTS \"Resolute Raccoon\" - Release amd64 (20260826)";
+# this keeps every field of that except the name, so casper still gets
+# "puralvos", casper-bottom's cut -f3 still finds "LTS", and the installer
+# finds its codename.
 if [ -f "$WORK/iso/.disk/info" ]; then
-	printf 'PuralvOS 26.04.1 LTS - Live amd64 (built from Ubuntu Studio)\n' \
-		> "$WORK/iso/.disk/info"
+	printf 'PuralvOS 26.04.1 LTS "Resolute Raccoon" - Release amd64 (%s)\n' \
+		"$(date -u +%Y%m%d)" > "$WORK/iso/.disk/info"
 	echo "  iso label: $(cat "$WORK/iso/.disk/info")"
 fi
 
 say "boot menu"
 G="$WORK/iso/boot/grub/grub.cfg"
 if [ -f "$G" ]; then
+	# The trailing /^grub_platform$/ delete removes a bare command line that
+	# the stock Ubuntu Studio grub.cfg carries before its `if [ "$grub_platform"
+	# = "efi" ]` block. In a consistent GRUB it is a no-op; when the boot core
+	# and the modules disagree it is what prints
+	#     error: can't find command `grub_platform'
+	# across the top of the menu before anything else goes wrong. The line is
+	# not ours and carries no information, so it does not survive the rebrand.
 	sed -i \
 	  -e 's/Try or Install Ubuntu Studio/PuralvOS Live — install or try out/' \
 	  -e 's/Ubuntu Studio (safe graphics)/PuralvOS Live (safe graphics)/' \
 	  -e 's/^set timeout=.*/set timeout=5/' \
+	  -e '/^grub_platform$/d' \
 	  "$G"
 	echo "  menu entries now:"
 	grep -E '^\s*menuentry' "$G" | sed 's/^/    /'
@@ -380,6 +603,26 @@ if [ -f "$G" ]; then
 	grep -qE 'console=ttyS0[^ ]*[[:space:]]+console=ttyS0' "$G" \
 		&& die "a kernel command line has console=ttyS0 more than once"
 	echo "  all $NENTRIES entries carry console=ttyS0 and puralvos.selftest=1"
+
+	# Diagnostic builds (PURALVOS_DIAG=1) add puralvos.diag=1 next to the
+	# self test flag; puralvos-diag.service is condition gated on it. The
+	# pass always runs, so switching the flag off on a reused tree removes
+	# a stale puralvos.diag=1 instead of carrying it into a clean build.
+	GF="$G.diag.$$"
+	awk -v on="${PURALVOS_DIAG:-0}" '
+		/^[[:space:]]*linux[[:space:]]/ {
+			gsub(/[[:space:]]*puralvos\.diag=1/, "")
+			if (on == "1") sub(/puralvos\.selftest=1/,
+			                   "puralvos.selftest=1 puralvos.diag=1")
+		}
+		{ print }
+	' "$G" > "$GF" && mv "$GF" "$G"
+	if [ "${PURALVOS_DIAG:-0}" = "1" ]; then
+		NDIAG=$(grep -cE '^[[:space:]]*linux[[:space:]].*puralvos\.diag=1' "$G")
+		[ "$NDIAG" -eq "$NENTRIES" ] \
+			|| die "$NDIAG of $NENTRIES kernel command lines have puralvos.diag=1."
+		echo "  all $NENTRIES entries also carry puralvos.diag=1 (diagnostic build)"
+	fi
 fi
 
 # --------------------------------------------------------------------------
@@ -448,6 +691,34 @@ install -Dm0644 "$REPO/tools/puralvos-selftest.service" \
 	"$FULL/etc/systemd/system/puralvos-selftest.service"
 rm -f "$FULL/lib/systemd/system/puralvos-selftest.service"
 
+# An installed unit that was never enabled does not run at boot, which is how
+# a fully fixed self test ended up not running at all in the image it was
+# fixed for. systemctl enable inside the chroot is the offline path: no init
+# is there to talk to and it just writes the multi-user.target.wants symlink.
+# The unit's ConditionKernelCommandLine=puralvos.selftest=1 still keeps it a
+# no-op on every boot that does not ask for it.
+chroot "$FULL" systemctl enable puralvos-selftest.service >/dev/null 2>&1 \
+	|| die "could not enable puralvos-selftest.service in the chroot.
+     Without it the self test never runs at boot and the image cannot report
+     what it is."
+# -L, not -e. systemctl writes the wants symlink with an ABSOLUTE target
+# (/etc/systemd/system/puralvos-selftest.service), and -e follows symlinks —
+# out of the build root, into the build machine's own /etc, where that file
+# does not exist. So the symlink the previous line just created perfectly
+# correctly is "a dangling symlink" to every test that dereferences it, and
+# this check failed a build whose self test was, in fact, enabled. It checked
+# whether the HOST could dereference a path in the tree; -L checks what was
+# actually asked: that the link exists at all.
+[ -L "$FULL/etc/systemd/system/multi-user.target.wants/puralvos-selftest.service" ] \
+	|| die "puralvos-selftest.service is still not enabled after systemctl enable.
+     The boot time self test would silently not run."
+# And the target has to be there too, checked inside the tree.
+[ -f "$FULL$(readlink "$FULL/etc/systemd/system/multi-user.target.wants/puralvos-selftest.service")" ] \
+	|| die "the self test wants symlink points at a unit that is not in the tree.
+     Inside the layer the link would dangle and the boot time self test would
+     silently not run."
+echo "  self test unit: enabled (runs only with puralvos.selftest=1)"
+
 # The desktop-entry parser the self test uses, so there is one implementation
 # of it in the shipped image rather than one in the image and another in the
 # repository that can disagree. See tools/lib/desktop-exec.sh for why that
@@ -455,6 +726,26 @@ rm -f "$FULL/lib/systemd/system/puralvos-selftest.service"
 # and VLC as broken.
 install -Dm0644 "$REPO/tools/lib/desktop-exec.sh" \
 	"$FULL/usr/local/lib/puralvos/desktop-exec.sh"
+
+# puralvos-diag: the boot time evidence collector, only for diagnostic builds.
+#
+# Built with PURALVOS_DIAG=1 in the environment, and even then it does nothing
+# unless the kernel command line says puralvos.diag=1, which the grub.cfg pass
+# above adds for the same builds. A production image does not carry the unit at
+# all. See tools/puralvos-diag for the failure this exists to explain.
+if [ "${PURALVOS_DIAG:-0}" = "1" ]; then
+	install -Dm0755 "$REPO/tools/puralvos-diag" \
+		"$FULL/usr/local/bin/puralvos-diag"
+	install -Dm0644 "$REPO/tools/puralvos-diag.service" \
+		"$FULL/etc/systemd/system/puralvos-diag.service"
+	chroot "$FULL" systemctl enable puralvos-diag.service >/dev/null 2>&1 \
+		|| die "could not enable puralvos-diag.service in the chroot"
+	[ -L "$FULL/etc/systemd/system/multi-user.target.wants/puralvos-diag.service" ] \
+		|| die "puralvos-diag.service did not get enabled"
+	echo "  diag unit: enabled (runs only with puralvos.diag=1)"
+else
+	echo "  diag unit: not built (PURALVOS_DIAG=1 adds it)"
+fi
 
 # The declared package list. The self test's tier 1a verifies that every
 # package tasks.list promises is really installed, and it cannot do that
@@ -489,12 +780,32 @@ fi
 # USER ON THE HOST. There is no --chroot option on usermod; a user database
 # inside a build root is only ever edited through `chroot`.
 #
-# So: take the name casper will use, and write /etc/group directly. casper
-# reads USERNAME out of its own /etc/casper.conf in the initramfs, which is
-# "ubuntu" on this image. There is no casper.conf in the squashfs to read it
-# from, so this is the one name that has to be known here; the verification
-# below is what keeps it honest.
-LIVE_USER=ubuntu
+# So: take the name casper will use, and write the group file directly. The
+# name casper will use is not baked into the image at all — it is the flavour.
+# casper.conf in the initrd has FLAVOUR unset, and by its own documented rule
+# that makes casper rename the live user AND the hostname to the flavour
+# string, lowercased. The flavour is the first token of .disk/info, which this
+# script wrote a few lines up, so the writer and the reader of that fact are
+# the same file.
+#
+# It read "LIVE_USER=ubuntu" here for several builds, and that was believed
+# because casper.conf also ships export USERNAME="ubuntu" — but that is the
+# line the comment in casper.conf itself says will not be honoured. What
+# confirmed the real name was the boot: the serial console prints the hostname
+# above the login prompt, and it printed "puralvos", not "ubuntu". The live
+# user was never added to the audio group because the group line said ubuntu
+# and the running user was puralvos; the "Ubuntu Studio Audio Configuration"
+# dialog that opened by itself on the first live session was the machine
+# saying so.
+LIVE_USER=$(sed -n '1s/[[:space:]].*//p' "$WORK/iso/.disk/info" | tr '[:upper:]' '[:lower:]')
+[ -n "$LIVE_USER" ] \
+	|| die "$WORK/iso/.disk/info is missing or empty, so the live user's name
+     cannot be derived. casper takes it from that file's first token."
+case "$LIVE_USER" in
+	*[!a-z0-9]*|'') die "$WORK/iso/.disk/info starts with '$LIVE_USER', which is
+     not a valid user name. casper would create the login under it (or fail
+     to), and the audio group entry below would not match." ;;
+esac
 if grep -q "^audio:" "$FULL/etc/group"; then
 	# Rewrite the member list: drop every member with no /etc/passwd entry,
 	# then add the live user. A stale name here is not inert, and neither is
@@ -563,7 +874,13 @@ Relogin=false
 [General]
 DisplayServer=x11
 EOF
-	echo "  autologin: ubuntu -> plasma on x11"
+	# The heredoc above is quoted, so the placeholder is filled in here with
+	# the same derived name the audio group uses. Two copies of "the live
+	# user is X" in one function is how they come to disagree.
+	sed -i "s/^User=ubuntu$/User=$LIVE_USER/" "$FULL/etc/sddm.conf.d/99-puralvos-live.conf"
+	grep -q "^User=$LIVE_USER$" "$FULL/etc/sddm.conf.d/99-puralvos-live.conf" \
+		|| die "could not set the SDDM autologin user to $LIVE_USER"
+	echo "  autologin: $LIVE_USER -> plasma on x11"
 else
 	die "$FULL/etc/sddm.conf.d does not exist, so the autologin settings cannot be
      placed. The live session would come up at a login prompt with nobody to
@@ -703,6 +1020,403 @@ else
 	echo "  no /boot/grub/themes/ubuntustudio in this image, nothing to rebrand" >&2
 fi
 
+say "Plasma look and feel, themes and wallpaper"
+# This image is Plasma, and until this section existed the branding was a
+# filesystem full of PuralvOS names that the desktop never used:
+#
+#   * org.ubuntustudio-dark.desktop was installed and nothing applied it.
+#     There is no /etc/xdg/kdeglobals setting LookAndFeelPackage and skel
+#     carries no Plasma config, so the live session ran the KDE default —
+#     Breeze. The grey desktop in the first review screenshot was Breeze's
+#     wallpaper, not "the studio wallpaper with a missing file" it was
+#     written down as.
+#
+#   * that LNF pointed its [Wallpaper] Image at ubuntustudio_2604, which the
+#     wallpaper cleanup at the top of this function deletes precisely
+#     because it is studio artwork. Applying the old LNF unchanged would
+#     resolve to nothing.
+#
+# So the distro does the three things itself: rename the payload to puralvos
+# names (rewriting self-references in text files only), point it at this
+# product's wallpaper, and make it the default twice — LookAndFeelPackage in
+# /etc/xdg/kdeglobals for the session itself, and an autostart applier as the
+# belt to that suspenders, because a session with existing config never
+# re-applies the LNF but does read /etc/xdg/autostart.
+LF="$FULL/usr/share/plasma/look-and-feel"
+if [ -d "$LF/org.ubuntustudio-dark.desktop" ]; then
+	rm -rf "$LF/org.puralvos.desktop"
+	cp -a "$LF/org.ubuntustudio-dark.desktop" "$LF/org.puralvos.desktop"
+	# Text files only. -I so that the QML and the artwork are skipped:
+	# grep reports an SVG as "binary file matches" and sed then corrupts it,
+	# and the sed -i on a JPEG is worse than no sed at all.
+	grep -rIl 'Ubuntu Studio\|ubuntu-studio\|ubuntustudio' \
+		"$LF/org.puralvos.desktop" 2>/dev/null |
+	while IFS= read -r f; do
+		sed -i \
+			-e 's/Ubuntu Studio/PuralvOS/g' \
+			-e 's/ubuntu-studio-devel@ubuntu\.com/alvgot@users.noreply.github.com/g' \
+			-e 's#https://www\.ubuntustudio\.org#https://github.com/alvgot/puralvos#g' \
+			-e 's/org\.ubuntustudio-dark\.desktop/org.puralvos.desktop/g' \
+			-e 's/ubuntustudio-dark/puralvos-dark/g' \
+			-e 's/ubuntustudio/puralvos/g' \
+			"$f"
+	done
+	rm -rf "$LF/org.ubuntustudio-dark.desktop"
+	D="$LF/org.puralvos.desktop/contents/defaults"
+	if [ -f "$D" ]; then
+		# Image=puralvos resolves against /usr/share/wallpapers below.
+		# The ksplash override names the studio splash; with it gone the
+		# splash falls back to Breeze's, which is plain and correct.
+		sed -i -e 's/^Image=.*/Image=puralvos/' -e '/^\[ksplashrc\]/,$d' "$D"
+	fi
+	# Splash and lockscreen art are the studio logo. Deleting the dirs
+	# hands both back to Breeze; leaving them would put another product's
+	# mark on this one's screen at every login.
+	rm -rf "$LF/org.puralvos.desktop/contents/splash" \
+	       "$LF/org.puralvos.desktop/contents/lockscreen"
+	install -m 0644 "$ASSETS/preview-mark.png" \
+		"$LF/org.puralvos.desktop/contents/previews/preview.png"
+	install -m 0644 "$ASSETS/preview-mark.png" \
+		"$LF/org.puralvos.desktop/contents/previews/splash.png"
+	install -m 0644 "$ASSETS/lnf-fullscreenpreview.jpg" \
+		"$LF/org.puralvos.desktop/contents/previews/fullscreenpreview.jpg"
+	echo "  look-and-feel: org.puralvos.desktop (renamed from org.ubuntustudio-dark.desktop)"
+else
+	echo "  no org.ubuntustudio-dark.desktop in $LF, nothing to rename" >&2
+fi
+
+# The rest of the look-and-feel family. The -look package ships SIX more
+# global themes — plain "Ubuntu Studio", "Ubuntu Studio Live", Classic,
+# Classic Dark, and two macOS-alike layouts — and System Settings' Global
+# Theme page lists every one by its metadata Name. They are furniture: once
+# the kf5-settings templates below are repointed at org.puralvos.desktop,
+# nothing this image ships references any of them, and a distro that ships
+# one theme should not list seven, six of them another product's. Delete.
+for t in org.ubuntustudio.desktop org.ubuntustudio-live.desktop \
+	org.ubuntustudio-classic.desktop org.ubuntustudio-classic-dark.desktop \
+	org.ubuntustudio-maclike.desktop org.ubuntustudio-dark-maclike.desktop; do
+	[ -d "$LF/$t" ] || continue
+	rm -rf "$LF/$t"
+	echo "  look-and-feel: removed $t"
+done
+
+# The panel layout templates. These are NOT furniture: panel-refresh writes
+# three of them at every session start and the LNF above loadTemplate()s
+# org.puralvos.desktop.defaultPanel — a name that did not exist until this
+# block, so the live panel layout has been resolving to a template the
+# rename left behind. Rename the directories, the plugin ids inside the
+# metadata, and the picker names ("Ubuntu Studio Default Panel" is listed in
+# the desktop's Add Panel menu), then repoint the three paths panel-refresh
+# writes.
+LTP="$FULL/usr/share/plasma/layout-templates"
+for t in defaultPanel dock classicPanel livePanel globalMenuPanel; do
+	old="$LTP/org.ubuntustudio.desktop.$t"
+	new="$LTP/org.puralvos.desktop.$t"
+	[ -d "$old" ] || continue
+	rm -rf "$new"
+	mv "$old" "$new"
+	grep -rIl 'ubuntustudio\|Ubuntu Studio' "$new" 2>/dev/null |
+	while IFS= read -r f; do
+		sed -i -e 's/Ubuntu Studio/PuralvOS/g' \
+		       -e 's/org\.ubuntustudio\.desktop/org.puralvos.desktop/g' \
+		       -e 's/ubuntustudio/puralvos/g' "$f"
+	done
+	echo "  layout template: org.puralvos.desktop.$t"
+done
+if [ -f "$FULL/usr/sbin/ubuntustudio-panel-refresh" ]; then
+	sed -i 's/org\.ubuntustudio\.desktop/org.puralvos.desktop/g' \
+		"$FULL/usr/sbin/ubuntustudio-panel-refresh"
+	echo "  panel builder: template paths repointed"
+fi
+
+# The kept theme's own layout script still points its two desktop
+# containments at /usr/share/wallpapers/puralvos-default*.png — files that
+# stopped existing when the wallpaper cleanup deleted everything named
+# *ubuntu*, renamed by the text sed above to names nothing ships. Point them
+# at this image's wallpaper so applying the theme lands on the real
+# background rather than on the plugin's fallback.
+LJS="$LF/org.puralvos.desktop/contents/layouts/org.kde.plasma.desktop-layout.js"
+if [ -f "$LJS" ]; then
+	sed -i \
+		-e 's#file:///usr/share/wallpapers/puralvos-default2\.png#file:///usr/share/wallpapers/puralvos/contents/images/2560x1440.png#' \
+		-e 's#file:///usr/share/wallpapers/puralvos-default\.png#file:///usr/share/wallpapers/puralvos/contents/images/3840x2160.png#' \
+		"$LJS"
+	echo "  theme layout: wallpapers repointed at /usr/share/wallpapers/puralvos"
+fi
+
+# kf5-settings: the KDE config templates the -live-settings and
+# -default-settings packages install (used when KDE settings are applied on
+# an installed system; the boot-time casper hook only appends to them). They
+# name the studio themes, the studio icon set and, in kcm-about-distrorc,
+# the about page System Settings shows: Name=Ubuntu Studio, the studio
+# website and the studio logo. Repoint the theme references at the one theme
+# this image ships and brand the about page.
+KFS="$FULL/usr/share/ubuntustudio/kf5-settings"
+if [ -d "$KFS" ]; then
+	for f in "$KFS"/*; do
+		[ -f "$f" ] || continue
+		sed -i \
+			-e 's/org\.ubuntustudio-live\.desktop/org.puralvos.desktop/g' \
+			-e 's/org\.ubuntustudio-dark\.desktop/org.puralvos.desktop/g' \
+			-e 's/org\.ubuntustudio\.desktop/org.puralvos.desktop/g' \
+			-e 's/^Theme=ubuntustudio$/Theme=puralvos/' \
+			"$f"
+	done
+	CA="$KFS/kcm-about-distrorc"
+	if [ -f "$CA" ]; then
+		sed -i -e 's/^Name=.*/Name=PuralvOS/' \
+		       -e 's#^Website=.*#Website=https://github.com/alvgot/puralvos#' \
+		       "$CA"
+	fi
+	# The lock screen template pinned its greeter wallpaper at a
+	# backgrounds path the wallpaper cleanup deletes; the file:// URL was
+	# even missing a slash upstream. Send it to this image's wallpaper.
+	KL="$KFS/kscreenlockerrc.live"
+	if [ -f "$KL" ] && grep -q '^Image=' "$KL"; then
+		sed -i 's#^Image=.*#Image=file:///usr/share/wallpapers/puralvos/contents/images/3840x2160.png#' "$KL"
+	fi
+	echo "  kf5-settings templates repointed (themes, icons, about page)"
+fi
+
+# The live installer unit. ubuntustudio-system-installer.service is what
+# opens the installer window on the live desktop, and its ExecStopPost — run
+# when that window closes — resets the user's Plasma layout to
+# org.ubuntustudio-dark.desktop, a look-and-feel id this function deleted a
+# few paragraphs up. lookandfeeltool then fails and the post-installer
+# layout refresh silently does nothing. It also plays a ksplash test on a
+# splash directory the theme rename removes. Both name the renamed theme
+# now; the ksplash call goes.
+UI="$FULL/usr/lib/systemd/user/ubuntustudio-system-installer.service"
+if [ -f "$UI" ]; then
+	sed -i -e 's/org\.ubuntustudio-dark\.desktop/org.puralvos.desktop/g' \
+	       -e 's/^Description=.*/Description=PuralvOS live system installer/' \
+	       -e 's#ksplashqml --test [^;]*; *##' "$UI"
+	echo "  live installer unit: layout reset repointed at org.puralvos.desktop"
+fi
+
+# A dangling user unit symlink that ships in the live image:
+# graphical-session.target.wants/ubuntu-desktop-installer.service resolves
+# to a unit file that does not exist anywhere in the tree, so every user
+# session starts by logging a failed unit load. Nothing on this image is
+# waiting for it; remove the link rather than the thing it names (which
+# would be a null operation anyway).
+rm -f "$FULL/etc/systemd/user/graphical-session.target.wants/ubuntu-desktop-installer.service"
+
+# Desktop theme and icon theme, renamed the same way and for the same
+# reason: System Settings lists them BY THEIR METADATA NAME, and both said
+# "Ubuntu Studio".
+for dt in ubuntustudio ubuntustudio-dark; do
+	src="$FULL/usr/share/plasma/desktoptheme/$dt"
+	[ -d "$src" ] || continue
+	dst_name=$(printf '%s' "$dt" | sed 's/ubuntustudio/puralvos/')
+	dst="$FULL/usr/share/plasma/desktoptheme/$dst_name"
+	rm -rf "$dst"
+	cp -a "$src" "$dst"
+	grep -rIl 'Ubuntu Studio\|ubuntustudio' "$dst" 2>/dev/null |
+	while IFS= read -r f; do
+		sed -i -e 's/Ubuntu Studio/PuralvOS/g' -e 's/ubuntustudio/puralvos/g' "$f"
+	done
+	rm -rf "$src"
+	echo "  desktop theme: $dst_name"
+done
+for it in ubuntustudio ubuntustudio-dark; do
+	src="$FULL/usr/share/icons/$it"
+	[ -d "$src" ] || continue
+	dst_name=$(printf '%s' "$it" | sed 's/ubuntustudio/puralvos/')
+	dst="$FULL/usr/share/icons/$dst_name"
+	rm -rf "$dst"
+	cp -a "$src" "$dst"
+	grep -rIl 'Ubuntu Studio\|ubuntustudio\|only Studio' "$dst" 2>/dev/null |
+	while IFS= read -r f; do
+		sed -i -e 's/Ubuntu Studio/PuralvOS/g' \
+		       -e 's/only Studio uses/only PuralvOS uses/' \
+		       -e 's/ubuntustudio/puralvos/g' "$f"
+	done
+	rm -rf "$src"
+	echo "  icon theme: $dst_name"
+done
+
+# The default look and feel, system-wide. [KDE] LookAndFeelPackage is what a
+# Plasma session reads when the user has no preference of their own; unset,
+# which is how this image shipped, means Breeze. Written to edit rather than
+# append, so that re-authoring an already-branded tree (--author-only) does
+# not stack duplicate lines, which kdeglobals would then resolve last-wins.
+KDEG="$FULL/etc/xdg/kdeglobals"
+mkdir -p "$FULL/etc/xdg"
+if [ -f "$KDEG" ] && grep -qE '^[[:space:]]*LookAndFeelPackage[[:space:]]*=' "$KDEG"; then
+	sed -i -E 's|^[[:space:]]*LookAndFeelPackage[[:space:]]*=.*|LookAndFeelPackage=org.puralvos.desktop|' "$KDEG"
+elif [ -f "$KDEG" ] && grep -qE '^\[KDE\]' "$KDEG"; then
+	awk '/^\[KDE\]/ && !done {print; print "LookAndFeelPackage=org.puralvos.desktop"; done=1; next} {print}' \
+		"$KDEG" > "$KDEG.new" && mv "$KDEG.new" "$KDEG"
+else
+	[ -f "$KDEG" ] || : > "$KDEG"
+	printf '[KDE]\nLookAndFeelPackage=org.puralvos.desktop\n' >> "$KDEG"
+fi
+echo "  kdeglobals: LookAndFeelPackage=org.puralvos.desktop"
+
+# The wallpaper as a first-class Plasma wallpaper package, so the LNF's
+# Image=puralvos resolves and the picker shows it by name. Plasma resolves
+# wallpaper ids against /usr/share/wallpapers/<id>/.
+WP="$FULL/usr/share/wallpapers/puralvos"
+install -d "$WP/contents/images"
+install -m 0644 "$ASSETS/wallpaper-1080p.png" "$WP/contents/images/1920x1080.png"
+install -m 0644 "$ASSETS/wallpaper-1440p.png" "$WP/contents/images/2560x1440.png"
+install -m 0644 "$ASSETS/wallpaper-4k.png" "$WP/contents/images/3840x2160.png"
+install -m 0644 "$ASSETS/wallpaper-1080p.png" "$WP/contents/screenshot.png"
+cat > "$WP/metadata.json" <<'EOF'
+{
+    "KPlugin": {
+        "Authors": [
+            {
+                "Name": "PuralvOS"
+            }
+        ],
+        "Id": "puralvos",
+        "License": "CC-BY-SA",
+        "Name": "PuralvOS"
+    }
+}
+EOF
+echo "  wallpaper package: /usr/share/wallpapers/puralvos"
+
+# And the belt to the LNF's suspenders: an autostart entry that re-asserts
+# the wallpaper at every login, for sessions whose kdeglobals already exists
+# (the LNF applies once; this applies always). NoDisplay: it is an action,
+# not an app. plasma-apply-wallpaperimage is part of plasma-workspace; the
+# || true keeps a session's startup clean if it ever is not.
+cat > "$FULL/etc/xdg/autostart/puralvos-wallpaper.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=PuralvOS Wallpaper
+Comment=Apply the PuralvOS wallpaper to the Plasma desktop
+Exec=sh -c "command -v plasma-apply-wallpaperimage >/dev/null 2>&1 && plasma-apply-wallpaperimage /usr/share/wallpapers/puralvos/contents/images/3840x2160.png || true"
+NoDisplay=true
+X-KDE-autostart-after=panel
+OnlyShowIn=KDE;
+EOF
+echo "  wallpaper autostart: /etc/xdg/autostart/puralvos-wallpaper.desktop"
+
+say "Ubuntu Studio leftovers the packages keep"
+# Packages this image keeps — because their files are load-bearing, the LNF
+# above is one of theirs — also ship pure studio furniture. apt purge is not
+# an option for any of it: simulated, purging any one of these packages
+# breaks the ubuntustudio metapackages' dependency chain and apt answers with
+# a REMOVED list holding darktable, digikam, hugin, the bpf tooling and most
+# of the graphics stack. So the studio FILES go, the packages stay, and
+# dpkg's database is left describing files that are not there — the same
+# trade the wallpaper cleanup at the top of this function already makes.
+#
+# 1. The first-run audio checker. It ships a user unit that opens a dialog
+#    when neither ~/.config/ubuntustudio-audio-firstrun exists nor the user
+#    is named "ubuntu-studio" — and the live user is "puralvos", by design,
+#    so the live session's first screen carried a modal asking about realtime
+#    audio before the user had done anything. The grants its dialog is about
+#    are already in /etc/security/limits.d and the live user is in @audio,
+#    both several screens up in this build.
+#
+#    There is no package to purge for this one. "ubuntustudio-audio-config"
+#    is not a package in the archive — `apt purge` answers "Unable to locate
+#    package", and every file of it (the binary, the share dir, the .desktop)
+#    is owned by ubuntustudio-installer, which this image keeps. So the unit
+#    goes by rm, and the menu entry that would launch the same dialog by hand
+#    is hidden — not removed: it is package-owned and NoDisplay=true is the
+#    freedesktop way to take an entry out of the menus, the same treatment
+#    fix_desktop_entries applies above to entries whose Exec is missing.
+rm -f "$FULL/usr/lib/systemd/user/ubuntustudio-fix-firstrun.service"
+find "$FULL/etc/systemd/user" "$FULL/var/lib/systemd" \
+	-iname '*ubuntustudio-fix-firstrun*' -delete 2>/dev/null || true
+
+AC="$FULL/usr/share/applications/ubuntustudio-audio-config.desktop"
+if [ -f "$AC" ] && ! grep -qE '^(Hidden|NoDisplay)=true' "$AC"; then
+	sed -i '1i # Hidden by PuralvOS: the first-run unit that used to launch this is\n# gone, and the tool it would open is Ubuntu Studio furniture. See\n# tools/build-live.sh (Ubuntu Studio leftovers).\nNoDisplay=true' "$AC"
+	echo "  audio configuration entry hidden (unit is gone; the app would be a dead end)"
+fi
+
+# 2. Menu entries that open ubuntustudio.org. Links to another product's
+#    website are not furniture to rename, they are that product's.
+rm -f "$FULL"/usr/share/applications/ubuntustudio-chat-support.desktop \
+      "$FULL"/usr/share/applications/ubuntustudio-contribute.desktop \
+      "$FULL"/usr/share/applications/ubuntustudio-discourse.desktop \
+      "$FULL"/usr/share/applications/ubuntustudio-website.desktop
+
+# 3. The installer launcher keeps its function (it starts the same
+#    ubuntu-desktop-bootstrap flow as the live desktop icon) and loses its
+#    name. The translated Name[xx] lines are dropped rather than seds through
+#    twenty languages: one correct name beats a table of half-translated
+#    ones.
+ID="$FULL/usr/share/applications/ubuntustudio-installer.desktop"
+if [ -f "$ID" ]; then
+	sed -i -e '/^Name\[/d' -e '/^GenericName\[/d' \
+	       -e 's/^Name=.*/Name=PuralvOS Installer/' \
+	       -e 's/^GenericName=.*/GenericName=Install PuralvOS/' \
+	       -e 's/^Comment=.*/Comment=Install PuralvOS on this computer/' "$ID"
+	echo "  installer menu entry: renamed to PuralvOS Installer"
+fi
+
+# 4. The studio logos in the pixmaps and icon themes. The default panel's
+#    menu button points at ubuntustudio-logo-menu.png BY PATH
+#    (customButtonImage in ubuntustudio-panel-refresh), so the file stays
+#    and its content becomes the mark. The tiled version, not the bare
+#    strokes: at a panel's 22 px the strokes alone are a grey smudge, and the
+#    tile sits on the dark panel as if it belonged there. The hicolor theme
+#    carries the same logo at panel sizes and Papirus carries a set for the
+#    controls app; same treatment, found rather than listed so that a new
+#    size in a later package cannot slip through.
+for logo in "$FULL"/usr/share/pixmaps/ubuntustudio-logo*.png; do
+	[ -f "$logo" ] || continue
+	install -m 0644 "$ASSETS/mark-256.png" "$logo"
+done
+[ -f "$FULL/usr/share/pixmaps/ubuntustudio-logo.svg" ] && \
+	install -m 0644 "$ASSETS/mark.svg" "$FULL/usr/share/pixmaps/ubuntustudio-logo.svg"
+find "$FULL/usr/share/icons/hicolor" -iname '*ubuntustudio-logo*' -type f 2>/dev/null |
+while IFS= read -r logo; do
+	case "$logo" in
+		*.svg) install -m 0644 "$ASSETS/mark.svg" "$logo" ;;
+		*)     install -m 0644 "$ASSETS/mark-256.png" "$logo" ;;
+	esac
+done
+find "$FULL/usr/share/icons/Papirus" -iname 'ubuntustudio-controls.svg' -type f 2>/dev/null |
+while IFS= read -r logo; do
+	install -m 0644 "$ASSETS/mark.svg" "$logo"
+done
+
+# 5. The avatar every new account gets. skel ships the studio logo as .face
+#    and .face.icon; SDDM and the user list draw it, so it is user-visible
+#    before anything else in this list.
+for face in .face .face.icon; do
+	[ -e "$FULL/etc/skel/$face" ] && \
+		install -m 0644 "$ASSETS/mark-256.png" "$FULL/etc/skel/$face"
+done
+
+# 5b. GTK settings that point at the icon theme by its old name. The theme
+#     dirs were renamed above; a name that resolves to nothing gets every
+#     GTK app the fallback icons, which works and looks broken. Both skel
+#     (new accounts, the live user) and the system-wide copies.
+for f in "$FULL/etc/skel/.gtkrc-2.0" \
+         "$FULL/etc/skel/.config/gtk-3.0/settings.ini" \
+         "$FULL/etc/skel/.config/gtk-4.0/settings.ini" \
+         "$FULL/etc/gtk-3.0/settings.ini" \
+         "$FULL/etc/gtk-4.0/settings.ini"; do
+	[ -f "$f" ] || continue
+	sed -i \
+		-e 's/gtk-icon-theme-name="ubuntustudio-dark"/gtk-icon-theme-name="puralvos-dark"/' \
+		-e 's/gtk-icon-theme-name="ubuntustudio"/gtk-icon-theme-name="puralvos"/' \
+		-e 's/gtk-icon-theme-name=ubuntustudio-dark/gtk-icon-theme-name=puralvos-dark/' \
+		-e 's/gtk-icon-theme-name=ubuntustudio/gtk-icon-theme-name=puralvos/' \
+		"$f"
+done
+
+# 6. A GNOME dconf fragment (app folders). This is a Plasma image; the
+#    fragment is inert here and its folder names are studio menu names.
+rm -f "$FULL/etc/dconf/db/site.d/00_ubuntustudio"
+
+# 7. Plymouth themes that are alternative studio skins. The active theme is
+#    already puralvos; these are the leftovers the self test's boot-splash
+#    checks can still see.
+rm -rf "$FULL/usr/share/plymouth/themes/ubuntustudio-logo" \
+       "$FULL/usr/share/plymouth/themes/ubuntustudio-text" \
+       "$FULL/usr/share/grub/themes/ubuntustudio"
+
 # Anything still carrying Canonical's name in a menu or a config file the
 # self test looks at. Reported rather than passed over: docs/BRANDING.md lists
 # these as defects, and the check is cheap.
@@ -742,6 +1456,12 @@ fi
 if grep -nE '^\s*[A-Z_]+=\$\(grep .*\|' "$0" | grep -v '|| true' ; then
 	echo "  note: an assignment from a grep pipeline without '|| true' is above" >&2
 fi
+
+# The one downloaded component. Called from here, not from build_tree, so
+# that --author-only ships it too: brand_the_tree is the function both paths
+# run, and an image whose branding is right but whose headlining plugin is
+# missing is not the product either path should be able to build.
+install_tone3000
 
 } # end brand_the_tree
 
@@ -1007,6 +1727,25 @@ fi
 # Order matters in the other direction too: purging first means the package
 # removals are already in the layer diff when brand_the_tree runs, so the whiteout
 # list and the top layer are computed once, from the final state.
+#
+# Note what is NOT purged, and why it is not an oversight:
+#
+#   * ubuntustudio-audio-config is not a package at all. It looked like one
+#     on the installed list — it has a binary, a .desktop and a share dir —
+#     but dpkg-query says "no packages found matching", every file of it is
+#     owned by ubuntustudio-installer, and `apt purge ubuntustudio-audio-
+#     config` answers "Unable to locate package" (which purge_in_chroot's
+#     grep would have swallowed). The first-run checker is neutralised in
+#     brand_the_tree instead, where it is file work anyway: its unit is
+#     removed and its menu entry is hidden.
+#
+#   * Every other candidate — the menu, the icon theme, the wallpapers, the
+#     installer, even the generic kernel — simulates to a REMOVED list
+#     containing darktable, digikam, hugin and the rest of the audio/video/
+#     graphics stack, because they are in the ubuntustudio metapackages'
+#     dependency chain and apt takes the chain with them. Those stay
+#     installed and their files are branded or removed individually in
+#     brand_the_tree.
 say "removing photography and publishing"
 purge_in_chroot() {
 	local p
@@ -1149,27 +1888,173 @@ if [ "$WITH_KERNEL" = 1 ]; then
      claim PuralvOS makes would be false. Stop and look at linux-image-$RTVER."
 	fi
 	# The kernel's own initramfs, which carries the modules for this
-	# kernel. casper's initrd stays as the early microcode one it was.
+	# kernel and its own early microcode.
+	#
+	# It REPLACES the stock /casper/initrd instead of being appended to it.
+	# GRUB was loading both, 103 MB + 100 MB at every boot, and the stock
+	# one belongs to the generic kernel this image no longer ships. Both
+	# carry kernel/x86/microcode (checked below); the microcode that used
+	# to justify keeping casper's copy is in the realtime initrd too.
 	INITRD="$FULL/boot/initrd.img-$RTVER"
 	if [ -f "$INITRD" ]; then
-		cp -f "$INITRD" "$WORK/iso/casper/initrd.realtime"
-		echo "  casper/initrd.realtime <- initrd.img-$RTVER ($(du -h "$INITRD" | cut -f1))"
+		if ! lsinitramfs "$INITRD" 2>/dev/null | grep -q '^kernel/x86/microcode/'; then
+			echo "  warning: $RTVER's initrd carries no early microcode; the stock" >&2
+			echo "  initrd was dropped, so microcode loads late instead of early." >&2
+		fi
+		cp -f "$INITRD" "$WORK/iso/casper/initrd"
+		rm -f "$WORK/iso/casper/initrd.realtime"
+		echo "  casper/initrd <- initrd.img-$RTVER ($(du -h "$INITRD" | cut -f1)); stock initrd dropped"
 	else
 		die "$FULL/boot/initrd.img-$RTVER is missing.
      Without the kernel's own initramfs the image boots with no modules loaded
      for this kernel, which is the same failure as a missing lib/modules."
 	fi
+	# Stock images do not carry an initrd in the rootfs: /casper/initrd on the
+	# ISO is the only copy, and /boot/initrd.img is a dangling symlink (see the
+	# stock base-union's /boot). Keeping the generated one here cost 100 MB in
+	# the squashfs for a file nothing in the live session reads, so mirror the
+	# stock layout. update-initramfs writes it back on kernel upgrades.
+	rm -f "$FULL/boot/initrd.img-$RTVER"
+	# ------------------------------------------------------------------
+	# Slim: the non-realtime kernel goes.
+	#
+	# The base image ships two kernels: linux-image-7.0.0-30-generic from
+	# the base install, and linux-image-realtime installed alongside it.
+	# This image boots the realtime one — that is the point of it — and an
+	# extra kernel is 172 MB of modules plus a 17 MB vmlinuz plus System.map
+	# and config: two hundred megabytes nothing in the product ever loads.
+	#
+	# Not apt purge. Simulated, purging linux-image-7.0.0-30-generic takes
+	# the ubuntustudio metapackage chain with it (the generic kernel is a
+	# dependency there) and apt answers with a REMOVED list holding
+	# darktable, digikam, hugin, the bpf tooling and most of the graphics
+	# stack. So the package stays in dpkg, its files are removed, and dpkg
+	# -V would report the image — the same trade the branding makes for
+	# files that have to go. Nothing in the live session reads the generic
+	# kernel, and apt upgrading that one package is the only thing that
+	# would put the files back.
+	#
+	# Derived from dpkg rather than spelled out, so the day the archive
+	# moves to 7.0.0-40 this step still removes the right two hundred
+	# megabytes, and never the realtime kernel by accident.
+	# ------------------------------------------------------------------
+	GENERICV=$(chroot "$FULL" dpkg-query -W -f='${Package} ${db:Status-Abbrev}\n' \
+		'linux-image-*' 2>/dev/null |
+		awk '$1 ~ /^linux-image-[0-9]/ && $1 !~ /-realtime$/ && $2 == "ii" { print $1; exit }' |
+		sed -n 's/^linux-image-//p')
+	if [ -n "$GENERICV" ] && [ "$GENERICV" != "$RTVER" ] \
+	   && [ -d "$FULL/lib/modules/$GENERICV" ]; then
+		FREED=$(du -sm "$FULL/lib/modules/$GENERICV" 2>/dev/null | cut -f1)
+		rm -rf "$FULL/lib/modules/$GENERICV"
+		rm -f  "$FULL/boot/vmlinuz-$GENERICV" \
+		       "$FULL/boot/System.map-$GENERICV" \
+		       "$FULL/boot/config-$GENERICV" \
+		       "$FULL/boot/initrd.img-$GENERICV"
+		# /boot/vmlinuz.old points at the generic kernel and dangles now.
+		if [ -L "$FULL/boot/vmlinuz.old" ] \
+		   && [ ! -e "$FULL/boot/$(readlink "$FULL/boot/vmlinuz.old")" ]; then
+			rm -f "$FULL/boot/vmlinuz.old"
+		fi
+		echo "  removed the non-realtime kernel $GENERICV (${FREED:-?} MB of modules)"
+	else
+		echo "  no non-realtime kernel image to remove"
+	fi
+	# The surgery above must not have touched the kernel that ships booting.
+	[ -f "$FULL/boot/vmlinuz-$RTVER" ] && [ -d "$FULL/lib/modules/$RTVER" ] \
+		|| die "removing the generic kernel also removed the realtime kernel's
+     files ($RTVER), which is the one this image boots. Do not ship this."
 	echo "  modules present: $(ls "$FULL/lib/modules" | tr '\n' ' ')"
+
+	# ------------------------------------------------------------------
+	# The casper UUID pair, which has to be built together.
+	#
+	# casper's initramfs hook writes /conf/uuid.conf into the initramfs it
+	# builds, and casper then refuses the boot medium unless the same UUID
+	# appears in the medium's .disk/casper-uuid* (see check_dev in casper:
+	# it mounts the CD, is_casper_path passes, and then
+	# [ "$UUID" = "$devuid" ] || matches_uuid fails and it unmounts the disk
+	# it just proved was correct). A regenerated initramfs carries a new
+	# random UUID while .disk/casper-uuid-generic on the extracted tree is
+	# still the base ISO's, and the mismatch is invisible until boot:
+	#
+	#     Unable to find a medium containing a live file system
+	#
+	# even though blkid, the mount and the /casper/*.squashfs contents are
+	# all exactly right when checked by hand from an initramfs shell.
+	#
+	# GRUB loads both initrds in the order its menu names them, and for
+	# concatenated initramfs archives later files replace earlier ones, so
+	# the effective UUID is the one from the last initrd that carries one.
+	# Read it back out of the files that will actually boot, with Ubuntu's
+	# own unmkinitramfs, and write it where casper will compare it.
+	uuid_of_initrd() {
+		local initrd="$1" tmp u
+		[ -f "$initrd" ] || return 1
+		command -v unmkinitramfs >/dev/null 2>&1 || return 1
+		tmp=$(mktemp -d "$WORK/.uuid.XXXXXX")
+		if ! unmkinitramfs "$initrd" "$tmp" >/dev/null 2>&1; then
+			rm -rf "$tmp"; return 1
+		fi
+		u=$(cat "$tmp"/*/conf/uuid.conf 2>/dev/null | head -1)
+		rm -rf "$tmp"
+		[ -n "$u" ] || return 1
+		printf '%s\n' "$u"
+	}
+	CASPER_UUID=""
+	for initrd in "$WORK/iso/casper/initrd" "$WORK/iso/casper/initrd.realtime"; do
+		u=$(uuid_of_initrd "$initrd" || true)
+		[ -n "$u" ] && CASPER_UUID="$u"
+	done
+	if [ -n "$CASPER_UUID" ]; then
+		printf '%s\n' "$CASPER_UUID" > "$WORK/iso/.disk/casper-uuid-generic"
+		for f in "$WORK/iso/.disk/casper-uuid"*; do
+			[ -e "$f" ] || continue
+			printf '%s\n' "$CASPER_UUID" > "$f"
+		done
+		echo "  casper uuid: $CASPER_UUID (read from the initrds, written to .disk/casper-uuid-generic)"
+	elif command -v unmkinitramfs >/dev/null 2>&1; then
+		rm -f "$WORK/iso/.disk/casper-uuid"*
+		echo "  casper uuid: no initrd carries /conf/uuid.conf; removed .disk/casper-uuid* so casper skips the check"
+	else
+		echo "  WARNING: unmkinitramfs is missing, so the casper UUID pair cannot be" >&2
+		echo "  verified or synchronised. If the image reaches 'Unable to find a" >&2
+		echo "  medium containing a live file system', this is why." >&2
+	fi
 else
 	echo "  skipped: the image will boot the stock GENERIC kernel"
 fi
 
-say "pointing the boot menu at the real time kernel"
+say "cleaning package manager state only the build needed"
+# The chroot installed the realtime kernel and apt kept the download: the
+# modules .deb is 169 MB, already compressed, so squashfs cannot shrink it.
+# No stock image carries it (the stock archive directory holds lock files only).
+rm -f "$FULL"/var/cache/apt/archives/*.deb
+# The binary package caches (~110 MB) are chroot residue too — the stock image
+# has no pkgcache.bin at all, apt rebuilds it on first use.
+rm -f "$FULL"/var/cache/apt/pkgcache.bin "$FULL"/var/cache/apt/srcpkgcache.bin
+# The archive lists are different: the stock image SHIPS them (170 MB, inside
+# minimal.squashfs, where every ISO pays for them), and the live session and
+# the installer use them. The chroot's apt update rewrote them, so the diff
+# would stage copies in the top layer that buy nothing. Put the stock files
+# back, timestamps included, and the diff stays quiet: the live session sees
+# exactly the metadata stock shipped.
+if [ -d "$BASE_UNION/var/lib/apt/lists" ]; then
+	rm -rf "$FULL/var/lib/apt/lists"
+	cp -a "$BASE_UNION/var/lib/apt/lists" "$FULL/var/lib/apt/lists"
+fi
+
+say "checking the boot menu"
 G="$WORK/iso/boot/grub/grub.cfg"
-if [ -f "$G" ] && [ "$WITH_KERNEL" = 1 ] && [ -f "$WORK/iso/casper/initrd.realtime" ]; then
-	# Two initrds: casper's microcode one first, then the kernel's.
-	sed -i 's|^\(\s*\)initrd /casper/initrd$|\1initrd /casper/initrd /casper/initrd.realtime|' "$G"
+if [ -f "$G" ]; then
 	grep -nE 'initrd|linux ' "$G" | head -4 | sed 's/^/    /'
+	# The menu names one initrd, /casper/initrd, which the kernel section
+	# above replaced with this kernel's own. A second initrd here would mean
+	# an older tree or a drift in the menu edit; the image still boots, but
+	# 100 MB rides along for nothing.
+	if grep -q 'initrd.realtime' "$G"; then
+		echo "  warning: the menu still names initrd.realtime; the stock initrd" >&2
+		echo "  is concatenated with the realtime one instead of replaced." >&2
+	fi
 fi
 
 } # end build_tree
@@ -1243,9 +2128,15 @@ say "repacking the live layer"
 #
 # --delete is needed for the other direction too: a file the build REMOVED has
 # to become a whiteout in the top layer, or the base layer's copy of it comes
-# back when the overlay is assembled. A tombstone has to be packed in, and
-# mksquashfs takes it from the source directory as a zero length file named
-# ".wh.<name>", which is the standard overlayfs convention.
+# back when the overlay is assembled. A tombstone has to be packed in, and a
+# kernel overlayfs whiteout is a character device 0/0 carrying the REMOVED
+# PATH'S OWN NAME — NOT a file called ".wh.<name>". The ".wh." form is the
+# OCI/tar convention and kernel overlayfs treats it as an ordinary empty file:
+# inert. Packed that way, every deletion of a lower layer file was a no-op at
+# runtime while looking perfect in the tree (wallpapers, the GRUB theme,
+# purged package files all survived into booted images and the self test said
+# so). Canonical's own top layer packs real 0/0 nodes; so does this build, at
+# the whiteout pass far below.
 # Strip the itemised-change flags off the front of each line, leaving the path.
 #
 # Two details, both of which cost a build each.
@@ -1365,6 +2256,25 @@ rm -rf "$NEWTOP"; mkdir -p "$NEWTOP"
 	| ( cd "$NEWTOP" && tar xf - ) 2>/dev/null \
 	|| die "staging the top layer out of $FULL failed. tar's errors are above."
 
+# Seed snaps are their own copies in the stock image — the same inode under
+# /var/lib/snapd/seed/snaps and /var/lib/snapd/snaps — and mksquashfs stores a
+# hardlink pair once. Unpacking the layers into $FULL broke the link into two
+# independent files, and staging the diff put both back: 241 MB where the stock
+# layer carried 120. The installer snap is the only pair that reaches the top
+# layer today, but this is written over the whole seed directory because the
+# next base could add more. cmp proves the bytes match before sharing an inode;
+# size alone is not enough to justify that.
+for s in "$NEWTOP"/var/lib/snapd/seed/snaps/*.snap; do
+	[ -f "$s" ] || continue
+	t="$NEWTOP/var/lib/snapd/snaps/$(basename "$s")"
+	if [ -f "$t" ] \
+	   && [ "$(stat -c %s -- "$s")" = "$(stat -c %s -- "$t")" ] \
+	   && cmp -s -- "$s" "$t"; then
+		ln -f -- "$t" "$s"
+		echo "  hardlinked $(basename "$s") back to its seed copy"
+	fi
+done
+
 # The one directory that must NOT be staged empty.
 #
 # rsync -ani --delete lists every path under a directory that a branding step
@@ -1394,24 +2304,21 @@ rm -rf "$NEWTOP"; mkdir -p "$NEWTOP"
 # own boot/grub/grub.cfg is what boots. So the failure appears for the first
 # time at boot, on the installed-system menu, as an unbootable rescue prompt.
 #
-# Every directory that is a parent of a whiteout, and which the build does not
-# itself populate, has to be staged so it still exists.
-missing_parent=0
-while IFS= read -r p; do
-	parent="${p%/*}"
-	while [ -n "$parent" ]; do
-		# Already staged, or not a real directory in the tree.
-		[ -d "$NEWTOP/$parent" ] && break
-		if [ -d "$BASE_UNION/$parent" ]; then
-			mkdir -p "$NEWTOP/$parent"
-			missing_parent=$(( missing_parent + 1 ))
-			break
-		fi
-		parent="${parent%/*}"
-	done
-done < "$WORK/gone.list"
-[ "$missing_parent" -eq 0 ] \
-	|| echo "  restored $missing_parent parent director$( [ "$missing_parent" = 1 ] && echo y || echo ies ) that only existed in the base union"
+# There is deliberately no separate "restore the parents" pass here any more.
+#
+# There used to be: for every entry in gone.list it created the parent
+# directories under $NEWTOP, because a whiteout cannot sit in a directory the
+# top layer does not have. The whiteout pass below calls mkdir -p for the
+# parent of every whiteout it actually writes, so the pass is redundant — and
+# it is worse than redundant. gone.list holds every path under a deleted
+# directory (47 706 of them on this build), so the pass created EMPTY
+# DIRECTORIES named exactly like the paths that needed a whiteout. The
+# whiteout pass then saw a directory already there, left it alone, and the
+# layer carried "backgrounds/ubuntustudio/" as a real empty directory instead
+# of a 0/0 node: overlayfs merged it with the lower layer's directory, the
+# whiteout was never there, and every deleted wallpaper was still on the
+# booted image while this build log said 127 whiteouts. Caught by reading the
+# packed layer before spending a boot on it.
 
 # Count what arrived against what was actually asked for.
 #
@@ -1443,7 +2350,7 @@ echo "  staged $COPIED of $WANTED files"
 # then hides the whole subtree. Writing one whiteout per removed file instead —
 # which is what happened first — produces this:
 #
-#     boot/grub/themes/.wh.ubuntustudio            <- correct
+#     boot/grub/themes/.wh.ubuntustudio            <- one whiteout, on the dir
 #     boot/grub/themes/ubuntustudio/.wh.boot_menu_c.png
 #     boot/grub/themes/ubuntustudio/.wh.slider_s.png
 #     ... 38 850 of them
@@ -1455,35 +2362,31 @@ echo "  staged $COPIED of $WANTED files"
 # image is correct, but the layer carries a directory it was told to delete and
 # the size cost of proving a deletion is larger than the deletion.
 #
-# gone.list is sorted, so a directory always appears before everything under it.
-# That makes "has any ancestor already been whited out?" a comparison against
-# ONE remembered path rather than a walk of all of them, which is the only
-# version of this that runs.
+# "Has any ancestor already been whited out?" is answered by walking the
+# ancestors of the path and looking for a 0/0 node in the staging tree.
 #
-# The obvious implementation — a bash associative array holding every whiteout
-# written so far, tested against each ancestor of the current path — is correct
-# and unusable. Bash rehashes the array on every nested ${WH[$a]} expansion, so
-# a growing array walked 7 times per path took longer than the entire unpack of
-# 17 GB. Measured, not guessed: it did not finish in 400 seconds; this finishes
-# in 0.2.
-#
-# It reads backwards on first sight because the case PATTERN is the parent and
-# the subject is the child:
-#
-#     case "$p" in "$last"/*) covered ;;
-#
-# and the wrong way round, `case "$last" in "$p"/*)`, matches nothing at all —
-# which is how this first returned 38 870 whiteouts instead of 107.
+# The previous version remembered ONE path instead, which is sound only while
+# everything under a deleted directory is contiguous with it in sort order —
+# and "-" characters break exactly that: "usr/share/doc/dracut-config-generic"
+# sorts between "usr/share/doc/dracut" and "usr/share/doc/dracut/config"
+# ('-' 0x2d < '/' 0x2f), so the remembered path became the sibling, the child
+# was not skipped, and mkdir -p ran into the very node that was hiding it:
+# "mkdir: cannot create directory ... File exists". That killed the first
+# mknod build before it packed anything — cheap. The walk costs ~4 stat calls
+# per path, ~190k over 47k paths, well under a second.
 NWH=0
-LASTWH=""
 while IFS= read -r p; do
-	[ -e "$BASE_UNION/$p" ] || continue          # nothing to hide: base never had it
-	if [ -n "$LASTWH" ]; then
-		case "$p" in
-			"$LASTWH"/*) continue ;;      # already hidden by a whiteout above it
-		esac
-	fi
-	LASTWH="$p"
+	# -e follows symlinks, so a DANGLING symlink in the base union would be
+	# read as "never had it" and left visible. -L covers the link itself.
+	[ -e "$BASE_UNION/$p" ] || [ -L "$BASE_UNION/$p" ] || continue
+	a=""
+	case "$p" in */*) a="${p%/*}" ;; esac
+	covered=0
+	while [ -n "$a" ]; do
+		if [ -c "$NEWTOP/$a" ]; then covered=1; break; fi
+		case "$a" in */*) a="${a%/*}" ;; *) break ;; esac
+	done
+	[ "$covered" = 1 ] && continue
 	# dirname and basename are EXTERNAL commands, and calling them once per
 	# path forked a process 38 870 times — 32 seconds of the build doing
 	# nothing but forking, in a loop whose other two tests take 0.2s between
@@ -1498,7 +2401,29 @@ while IFS= read -r p; do
 		*)   d="$NEWTOP";            b="$p" ;;
 	esac
 	mkdir -p "$d"
-	: > "$d/.wh.$b"
+	# The whiteout is a character device 0/0 NAMED AFTER THE REMOVED PATH.
+	#
+	# The first version wrote a zero length file named ".wh.$b" — the OCI/tar
+	# convention — and it is inert: the kernel overlayfs in this image only
+	# honours the device form, so every file this build deleted from a lower
+	# layer came back at boot while the staging tree looked correct. The build
+	# said it deleted 16 Ubuntu wallpapers, the GRUB theme and the purged
+	# package files; the booted image still had all of them and tier 0 failed
+	# rather than the build. Canonical's stock top layer packs real 0/0 nodes
+	# (etc/dracut.conf, usr/bin/dracut) and those are the ones that work.
+	#
+	# A stock whiteout arrives through the $FULL staging as the character
+	# device it is; leave that alone (mknod would fail with EEXIST).
+	# Anything ELSE already sitting at the path is a spurious directory or
+	# file a staging step created, and it would MERGE with the lower layer
+	# instead of hiding it — the first run of this fix shipped exactly that:
+	# themes/ubuntustudio survived as an empty directory. Remove it, then
+	# write the node.
+	if [ -L "$d/$b" ] || { [ -e "$d/$b" ] && [ ! -c "$d/$b" ]; }; then
+		rm -rf "$d/$b" || die "cannot clear $p to write its whiteout"
+	fi
+	[ -c "$d/$b" ] || mknod "$d/$b" c 0 0 \
+		|| die "cannot make whiteout for $p"
 	NWH=$(( NWH + 1 ))
 done < "$WORK/gone.list"
 echo "  top layer contents: $(du -sh "$NEWTOP" | cut -f1) ($NWH whiteouts)"
@@ -1636,30 +2561,19 @@ ISOUT="$OUT/puralvos-live-$STAMP.iso"
 # BUILD MACHINE's /usr/lib/grub/, and the modules the resulting core loads at
 # boot come from the ISO tree's boot/grub.
 #
-# Those must be the same GRUB, and on this machine they are not:
-#
-#     host /usr/lib/grub            GRUB 2.12
-#     the ISO's boot/grub           GRUB 2.14
-#
-# which is a real hazard and is recorded rather than papered over. Passing -d to
-# point grub-mkrescue at the ISO's own modules is NOT the fix: -d expects a flat
-# single-platform module directory, and the ISO tree's platform directories have
-# no kernel.img, no .img boot targets and no modinfo.sh, so it fails with
+# Those must be the same GRUB, and the base ISO was built on 26.04 (GRUB 2.14)
+# while this build machine is 24.04 (GRUB 2.12). That was the grub_memcpy
+# rescue-prompt failure: a 2.12 core loading 2.14 modules. Passing -d to point
+# grub-mkrescue at the ISO's own modules is NOT a fix: -d expects a flat
+# single-platform module directory, and the ISO tree's platform directories
+# are not that, so it fails with
 #
 #     grub-mkrescue: error: .../grub-modules/moddep.lst: No such file or directory
-#     grub-mkrescue: error: .../grub-modules/biosdisk.mod: No such file or directory
 #
-# on successive attempts. The real fix is to build on a machine whose GRUB
-# matches the base ISO's, or to install matching GRUB modules; see
-# docs/WORK-REPORT.md.
-#
-# What is checked here is the thing that IS in our control: that the ISO tree
-# carries a platform directory for both firmwares. A missing one produces an ISO
-# that cannot boot at all, and grub-mkrescue will not complain.
-for plat in i386-pc x86_64-efi; do
-	[ -d "$WORK/iso/boot/grub/$plat" ] \
-		|| die "$WORK/iso/boot/grub/$plat is missing from the extracted ISO tree. Without it there is no ${plat} boot image to build, and the ISO will not boot on that firmware. See docs/BASELINE.md for what the base ships."
-done
+# on the first symbol it wants. The fix that is applied just below is to make
+# the tree agree with the build machine: its boot/grub/i386-pc and
+# boot/grub/x86_64-efi are replaced with the build machine's copies, so the
+# core and the modules are one build of one GRUB. See the block below.
 grub_module_version() {
 	local d=$1
 	[ -d "$d" ] || return 0
@@ -1668,18 +2582,31 @@ grub_module_version() {
 		strings "$m" 2>/dev/null | grep -oE '^2\.[0-9]+$' | head -1 && return 0
 	done
 }
-GRUB_ISO_VER=$(grub_module_version "$WORK/iso/boot/grub/x86_64-efi")
+# Replace the tree's platform module directories with the build machine's,
+# so the core and the modules are one GRUB. The tree's copies exist only for
+# the live boot; they are replaced wholesale rather than version-checked,
+# because a mix that is one minor version apart does not announce itself as a
+# mix, it just fails at boot with e.g.
+#
+#     error: symbol 'grub_memcpy' not found.
+#
+# because the core is built from the build machine's GRUB and then loads the
+# tree's .mod files. The staged tree this writes into is the WORK tree; a
+# resume or --author-only run re-syncs here too, so the tree on disk cannot
+# drift from what the next ISO needs.
+for plat in i386-pc x86_64-efi; do
+	[ -d "/usr/lib/grub/$plat" ] \
+		|| die "this build machine has no /usr/lib/grub/$plat ...
+     Its GRUB has to be able to build the boot images; install
+     grub-pc-bin and grub-efi-amd64-bin."
+	[ -d "$WORK/iso/boot/grub/$plat" ] \
+		|| die "$WORK/iso/boot/grub/$plat is missing from the extracted ISO tree.
+     Without it there is no ${plat} boot image to build. See docs/BASELINE.md."
+	rm -rf "$WORK/iso/boot/grub/$plat"
+	cp -a "/usr/lib/grub/$plat" "$WORK/iso/boot/grub/$plat"
+done
 GRUB_HOST_VER=$(grub_module_version /usr/lib/grub/x86_64-efi)
-echo "  grub: ISO modules GRUB ${GRUB_ISO_VER:-unknown}, build machine GRUB ${GRUB_HOST_VER:-unknown}"
-if [ "$GRUB_ISO_VER" != "$GRUB_HOST_VER" ]; then
-	{
-		echo "  WARNING: the ISO's GRUB and this machine's are different versions, and"
-		echo "  the boot core is built from this machine's. A core asking modules of"
-		echo "  another version for symbols does not boot: expect a UEFI rescue prompt"
-		echo "  reading 'symbol grub_memcpy not found'. Fix by building on a machine"
-		echo "  whose GRUB matches the base ISO, or by installing matching modules."
-	} >&2
-fi
+echo "  grub: ISO tree modules pinned to the build machine's GRUB ${GRUB_HOST_VER:-unknown}"
 
 grub-mkrescue -o "$ISOUT" -volid "PURALVOS_LIVE" "$WORK/iso/" 2>&1 \
 	| grep -viE '^xorriso|^libisofs|^Drive |^Media |^Added to|^ISO image produced|^Writing to' \

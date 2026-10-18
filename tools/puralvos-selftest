@@ -62,8 +62,24 @@ result() {
 # is only one.
 PurUser="${PURALVOS_USER:-}"
 if [ -z "$PurUser" ]; then
+	# loginctl's uid column is the FIRST field. The first version of this
+	# line tested $3 — the LINGER column, which never contains "1000" — so
+	# the "first user row" fallback always decided, and on a live boot the
+	# unit starts at multi-user.target before SDDM has logged anybody in,
+	# so there were no rows at all and the run fell through to the
+	# hardcoded "ubuntu": a user that does not exist on a flavour ISO.
+	# Every check after that tested a missing account, and the X wait
+	# pointed an xauth at a home directory that was never created.
+	#
+	# The reliable fact is not loginctl: casper creates the live user with
+	# uid 1000 (25adduser: "db_set passwd/user-uid 1000") under the name it
+	# derives from .disk/info. getent asks the passwd database directly and
+	# answers before any session exists, while loginctl is still consulted
+	# first WHEN it has an answer, because on an installed system it names
+	# the logged-in user even when that is not uid 1000.
 	# prefer a real login user over the installer account
-	PurUser=$(loginctl list-users --no-legend 2>/dev/null | awk '$3=="1000"{print $2; exit}')
+	PurUser=$(loginctl list-users --no-legend 2>/dev/null | awk '$1=="1000"{print $2; exit}')
+	[ -z "$PurUser" ] && PurUser=$(getent passwd 1000 2>/dev/null | cut -d: -f1)
 	[ -z "$PurUser" ] && PurUser=$(loginctl list-users --no-legend 2>/dev/null | awk 'NF{print $2; exit}')
 fi
 [ -z "$PurUser" ] && PurUser=ubuntu
@@ -82,39 +98,80 @@ if [ ! -S "$SessionDir/bus" ]; then
 		[ -S "$cand/bus" ] && { SessionDir=$cand; break; }
 	done
 fi
-XAuth="$SessionDir/Xauthority"
-[ -r "$XAuth" ] || XAuth="$PurHome/.Xauthority"
 
-# DISPLAY, discovered rather than assumed.
+# DISPLAY and XAUTHORITY, discovered rather than assumed, and re-discovered
+# while waiting for the session to appear.
 #
-# This was hardcoded to :0 and the desktop check reported "no X server after
-# 240s" on an image whose session was on :1, because a second display manager
-# or a leftover greeter had taken :0. The test then reported the desktop as
-# dead when the desktop was running perfectly one display over.
+# DISPLAY was hardcoded to :0 once and the desktop check reported "no X
+# server after 240s" on an image whose session was on :1, because a second
+# display manager or a leftover greeter had taken :0. The test then reported
+# the desktop as dead when the desktop was running perfectly one display
+# over. So the session process's own environment is the source of truth:
+# a PID, not a UID (/proc/<uid>/environ does not exist, and the first
+# attempt at this read nothing at all), and plasmashell or kwin because
+# they are what this test already waits for.
 #
-# Three sources, in order of how much they can be trusted:
+# XAUTHORITY rides along because guessing its path fails in practice: SDDM
+# does not write /run/user/<uid>/Xauthority or the user's ~/.Xauthority, it
+# writes /run/user/<uid>/xauth_XXXXXX and points the session environment at
+# that. The first boot with this test enabled waited out the full 240
+# seconds and would have failed every desktop check against a live desktop,
+# all because xdpyinfo was run with an XAUTHORITY path that did not exist.
 #
-#   1. the environment of a process that belongs to the user's session. A PID,
-#      not a UID: /proc/<uid>/environ does not exist, so the first attempt at
-#      this read nothing at all and silently fell through to the next source.
-#      plasmashell is the right process to ask, because it is in the session and
-#      it is what this test already waits for.
-#   2. loginctl, which knows the session's display but only once one is
-#      registered.
-#   3. :0, which is a guess, and is labelled as one.
+# Both are probed in one function so the wait loop can re-run it: the unit
+# starts at multi-user.target, and on a cold VM the session sometimes
+# appears seconds or minutes after the test's first look.
 DisPlay=""
-for _ppid in $(pgrep -u "$PurUid" -x plasmashell 2>/dev/null; \
-               pgrep -u "$PurUid" -x kwin_x11 2>/dev/null; \
-               pgrep -u "$PurUid" -x kwin_wayland 2>/dev/null); do
-	[ -r "/proc/$_ppid/environ" ] || continue
-	DisPlay=$(tr '\0' '\n' < "/proc/$_ppid/environ" 2>/dev/null |
-		sed -n 's/^DISPLAY=//p' | head -1)
-	[ -n "$DisPlay" ] && break
-done
-if [ -z "$DisPlay" ]; then
-	DisPlay=$(loginctl show-session "${PurUid}" -p Display --value 2>/dev/null | head -1)
-	[ -n "$DisPlay" ] && case "$DisPlay" in :*) ;; *) DisPlay=":$DisPlay" ;; esac
-fi
+SessXAUTH=""
+SessBus=""
+probe_session_env() {
+	local pid env_dump
+	DisPlay=""
+	SessXAUTH=""
+	SessBus=""
+	for pid in $(pgrep -u "$PurUid" -x plasmashell 2>/dev/null; \
+	             pgrep -u "$PurUid" -x kwin_x11 2>/dev/null; \
+	             pgrep -u "$PurUid" -x kwin_wayland 2>/dev/null); do
+		[ -r "/proc/$pid/environ" ] || continue
+		env_dump=$(tr '\0' '\n' < "/proc/$pid/environ" 2>/dev/null)
+		[ -n "$DisPlay" ] || DisPlay=$(printf '%s\n' "$env_dump" |
+			sed -n 's/^DISPLAY=//p' | head -1)
+		[ -n "$SessXAUTH" ] || SessXAUTH=$(printf '%s\n' "$env_dump" |
+			sed -n 's/^XAUTHORITY=//p' | head -1)
+		[ -n "$SessBus" ] || SessBus=$(printf '%s\n' "$env_dump" |
+			sed -n 's/^DBUS_SESSION_BUS_ADDRESS=//p' | head -1)
+		[ -n "$DisPlay" ] && [ -n "$SessXAUTH" ] && break
+	done
+}
+resolve_session() {
+	local xf
+	if [ -z "$DisPlay" ]; then
+		DisPlay=$(loginctl show-session "${PurUid}" -p Display --value 2>/dev/null | head -1)
+		[ -n "$DisPlay" ] && case "$DisPlay" in :*) ;; *) DisPlay=":$DisPlay" ;; esac
+	fi
+	# The bus can exist before any probeable session process does; prefer
+	# the one the found session's own processes point at.
+	if [ -n "$SessBus" ] && [ -S "${SessBus#unix:path=}" ]; then
+		SessionDir="${SessBus#unix:path=}"
+		SessionDir="${SessionDir%/*}"
+	elif [ ! -S "$SessionDir/bus" ] && [ -S "/run/user/$PurUid/bus" ]; then
+		SessionDir="/run/user/$PurUid"
+	fi
+	if [ -n "$SessXAUTH" ] && [ -r "$SessXAUTH" ]; then
+		XAuth="$SessXAUTH"
+		return
+	fi
+	if [ -r "$SessionDir/Xauthority" ]; then
+		XAuth="$SessionDir/Xauthority"
+		return
+	fi
+	for xf in "$SessionDir"/xauth_*; do
+		[ -r "$xf" ] && { XAuth="$xf"; return; }
+	done
+	XAuth="$PurHome/.Xauthority"
+}
+probe_session_env
+resolve_session
 [ -n "$DisPlay" ] || DisPlay=":0 (assumed: no session process to ask)"
 say "INFO display=$DisPlay session=$SessionDir xauth=$XAuth"
 
@@ -167,6 +224,13 @@ say "INFO waiting for the X server"
 XWAIT=${XWAIT:-240}
 XUP=0
 for _ in $(seq 1 "$XWAIT"); do
+	# Re-probe: on a cold boot the session appears after this unit starts,
+	# and each pass may be the first one that can see plasmashell, its
+	# DISPLAY and its real XAUTHORITY. Loginctl can lag the session by a
+	# beat even after that, so anything found there is recomputed too.
+	probe_session_env
+	resolve_session
+	[ -n "$DisPlay" ] || DisPlay=":0 (assumed: no session process to ask)"
 	if as_desktop xdpyinfo >/dev/null 2>&1; then XUP=1; break; fi
 	sleep 1
 done
@@ -457,14 +521,21 @@ fi
 # tooling, and reports the kernel's own view of the process.
 pwpid_early=$(pgrep -u "$PurUid" -x pipewire 2>/dev/null | head -1)
 if [ -n "$pwpid_early" ] && [ -r "/proc/$pwpid_early/limits" ]; then
-	proc_rt=$(awk '/^Max real-time priority/ {print $NF}' "/proc/$pwpid_early/limits")
+	# The kernel spells this field "Max realtime priority" — no hyphen. The
+	# hyphenated pattern matched nothing, printed nothing, defaulted to 0 and
+	# failed the check on every boot of every image, correct ones included.
+	proc_rt=$(awk '/^Max realtime priority/ {print $NF}' "/proc/$pwpid_early/limits")
 	proc_ml=$(awk '/^Max locked memory/ {print $(NF-3), $(NF-2), $(NF-1), $NF}' "/proc/$pwpid_early/limits")
 	if [ "${proc_rt:-0}" -ge 90 ]; then
 		result tier2 PASS "pipewire-rlimits" \
 			"pipewire runs with rtprio $proc_rt and memlock $proc_ml"
 	else
+		# RLIMIT_RTPRIO, read by the kernel. memlock can still show unlimited
+		# here — pipewire.service sets LimitMEMLOCK itself — but an rtprio of
+		# 0 means the limits.d grants are not applying to the daemon, and
+		# JACK started in a user session would be refused real time too.
 		result tier2 FAIL "pipewire-rlimits" \
-			"pipewire itself is at rtprio ${proc_rt:-0}, memlock $proc_ml; the grants are not reaching the audio daemon"
+			"RLIMIT_RTPRIO is ${proc_rt:-0} for pipewire (memlock $proc_ml): the limits.d grants are not applying; check user-in-audio-group above"
 	fi
 else
 	result tier2 SKIP "pipewire-rlimits" "pipewire is not running yet, cannot read its limits"
@@ -524,12 +595,21 @@ fi
 #
 # The pipeline result is captured first, so nothing in it is ever killed early,
 # and the status read afterwards is grep's own.
-GROUPS=$(id -nG "$PurUser" 2>/dev/null)
-if printf '%s\n' "$GROUPS" | tr ' ' '\n' | grep -qx audio; then
+# The variable must NOT be called GROUPS. That name is special in bash — it
+# holds the CURRENT user's groups as an array, and assignments to it are
+# silently ignored. The check runs as root, so every report read "groups: 0"
+# (root's group) no matter what id said, on an image where `id puralvos`
+# showed 29(audio) and the INFO line at the top of this script printed the
+# real group list from the same command. It contradicted rtprio-limit PASS
+# for months; the failure report's raw id/getent evidence is what proved the
+# check wrong rather than the image. Keep that evidence in the message — it
+# costs one line and it settled the argument.
+UGNAMES=$(id -nG "$PurUser" 2>/dev/null)
+if printf '%s\n' "$UGNAMES" | tr ' ' '\n' | grep -qx audio; then
 	result tier2 PASS "user-in-audio-group"
 else
 	result tier2 FAIL "user-in-audio-group" \
-		"$PurUser is not in the audio group (groups: ${GROUPS:-unknown})"
+		"$PurUser is not in the audio group (id -nG: '${UGNAMES:-unknown}'; id: $(id "$PurUser" 2>/dev/null | tr -s ' ' | cut -c1-150); getent group audio: $(getent group audio 2>/dev/null | cut -c1-90))"
 fi
 
 # --- the tuning that is not a package --------------------------------------
@@ -589,15 +669,25 @@ pwpid=$(pgrep -u "$PurUid" -x pipewire 2>/dev/null | head -1)
 if [ -z "$pwpid" ]; then
 	result tier2 SKIP "pipewire-rt-policy" "pipewire is not running yet"
 else
-	# Read chrt's whole output first. `chrt -p | grep -q` can lose the pipeline
-	# to SIGPIPE under pipefail, and then a pipewire running at priority 95 is
-	# reported as not running at 95.
-	PWPRIO=$(chrt -p "$pwpid" 2>/dev/null)
-	if printf '%s' "$PWPRIO" | grep -q 'prio-95'; then
-		result tier2 PASS "pipewire-rt-policy" "running at priority 95"
+	# Which thread holds real time, and at what priority.
+	#
+	# Two wrong expectations lived here. `chrt -p PID` reads the MAIN thread,
+	# and PipeWire's main thread is SCHED_OTHER by design — the daemon drops
+	# privileges and hands real time to its data threads through module-rt.
+	# And the value is not 95: PipeWire requests `rt.prio = 20` (module-rt's
+	# stock config), and that is the ceiling rtkit grants to a user daemon
+	# anyway. The 95 from limits.d is for JACK clients scheduling themselves
+	# directly. So the test is "does a data thread ride real time at all",
+	# and the priority is reported rather than judged against 95.
+	RTT=$(ps -L -p "$pwpid" -o rtprio=,comm= 2>/dev/null)
+	RTHI=$(printf '%s' "$RTT" | awk '$1 + 0 >= 1 {print $1, $2; exit}')
+	if [ -n "$RTHI" ]; then
+		NRTHI=$(printf '%s' "$RTT" | awk '$1 + 0 >= 1' | wc -l)
+		result tier2 PASS "pipewire-rt-policy" \
+			"$NRTHI thread(s) real time, first: $RTHI (rtkit grants 20; limits.d 95 is for JACK)"
 	else
 		result tier2 FAIL "pipewire-rt-policy" \
-			"$(printf '%s' "$PWPRIO" | tail -1 | tr -s ' ') - should be prio-95"
+			"no pipewire thread is real time; threads (rtprio, name): $(printf '%s' "$RTT" | tr '\n' ';')"
 	fi
 fi
 
@@ -652,8 +742,19 @@ else
 fi
 
 # The ISO's own label. Only present on a live image.
-if [ -r /.disk/info ]; then
-	DISKTXT=$(cat /.disk/info 2>/dev/null)
+#
+# On a casper live boot the file lives on the mounted ISO under /cdrom, not
+# in the root filesystem; reading only /.disk/info missed it entirely. The
+# stock image mounts its own ISO at /cdrom — that is also where the casper
+# scripts read user-setup defaults from — so both locations are checked.
+DISKTXT=""
+for f in /.disk/info /cdrom/.disk/info; do
+	if [ -r "$f" ]; then
+		DISKTXT=$(cat "$f" 2>/dev/null)
+		break
+	fi
+done
+if [ -n "$DISKTXT" ]; then
 	if printf '%s' "$DISKTXT" | grep -qi puralvos; then
 		result tier3 PASS "iso-label" "$DISKTXT"
 	else
@@ -731,11 +832,15 @@ else
 fi
 
 # Anything left anywhere that claims to be the boot menu or the installer.
-GRUBSTILL=$(grep -rlisE 'ubuntu[ -]?studio' /boot/grub /EFI/ubuntu 2>/dev/null | wc -l)
-if [ "$GRUBSTILL" -eq 0 ]; then
+# The failure names the files: a count alone has already cost a boot spent
+# hunting for one file nobody could identify.
+GRUBSTILL=$(grep -rlisE 'ubuntu[ -]?studio' /boot/grub /EFI/ubuntu 2>/dev/null)
+NGRUBSTILL=$(printf '%s' "$GRUBSTILL" | grep -c . )
+if [ "$NGRUBSTILL" -eq 0 ]; then
 	result tier3 PASS "grub-menus"
 else
-	result tier3 FAIL "grub-menus" "$GRUBSTILL file(s) in /boot/grub still say Ubuntu Studio"
+	result tier3 FAIL "grub-menus" \
+		"$NGRUBSTILL file(s) still say Ubuntu Studio: $(printf '%s' "$GRUBSTILL" | tr '\n' ' ' | cut -c1-160)"
 fi
 
 # ==========================================================================

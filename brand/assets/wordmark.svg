@@ -2,7 +2,7 @@
      width="1200" height="264" role="img" aria-label="PuralvOS">
   <title>PuralvOS</title>
   <text x="0" y="190" font-family="Inter, 'DejaVu Sans', sans-serif"
-        font-size="174" font-weight="600" letter-spacing="5"
+        font-size="174" font-weight="600" letter-spacing="3"
         fill="#E8EDF4">Pural<tspan fill="#FBBF24">v</tspan>OS</text>
   <text x="498" y="190" font-family="Inter, 'DejaVu Sans', sans-serif"
         font-size="69" letter-spacing="16"

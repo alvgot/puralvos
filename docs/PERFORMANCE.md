@@ -54,9 +54,9 @@ pam_limits.so`, so a real login gets the limits. That is the measurement, and it
 is what tier 2 of `tools/puralvos-selftest` now does.
 
 The strongest evidence is still not the number but the process: tier 2 also
-reads `Max real-time priority` and `Max locked memory` out of
-`/proc/<pipewire pid>/limits`, which is the kernel's own view of the audio
-daemon and depends on no tooling at all.
+reads `Max realtime priority` (the kernel's spelling — no hyphen) and
+`Max locked memory` out of `/proc/<pipewire pid>/limits`, which is the
+kernel's own view of the audio daemon and depends on no tooling at all.
 
 ## Targets
 
@@ -98,6 +98,11 @@ differ per release.
 The most important section in this file. A workstation can install perfectly,
 every application can be present, the mixer can open, and audio can still
 glitch under load because none of this happened.
+
+Every step below is configuration of a stock package — a file in `/etc`, never
+a patched binary and never a rebuilt package. That is what keeps
+`apt full-upgrade` safe on a running system at any time; see
+[PACKAGES.md](PACKAGES.md).
 
 ### 1. Limits and group
 
@@ -186,7 +191,8 @@ answers, on a real system:
 - is memlock actually unlimited
 - does the limits file exist and grant rtprio
 - is the user in `audio`
-- is PipeWire's own thread at priority 95
+- is a PipeWire data thread actually real time (rtkit grants 20; the 95 in
+  limits.d is what JACK clients schedule themselves with)
 - what is the CPU governor, the swappiness, the kernel command line
 - are there still Ubuntu's wallpapers, splash and login screen on disk
 

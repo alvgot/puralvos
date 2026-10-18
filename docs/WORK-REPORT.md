@@ -196,3 +196,83 @@ Bugs found and repaired, with the check added that would have caught each one:
 | 28 | `kwin_x11` only | Wayland sessions reported a dead desktop | either compositor accepted |
 | 29 | `DISPLAY=:0` hardcoded | a session on `:1` reported as no desktop at all | discovered from the session's own process |
 | 30 | Stale `.pyc` tracked in git | committed in a wallpaper commit | untracked, `.gitignore` updated |
+## 7. Session 2026-10-18: the installer, the audio checks, and the ISO size
+
+### The installer was killed by a branding line
+
+Every boot of every build since branding began ended with the installer
+window showing "Something went wrong", while the rest of the live session
+was healthy. The serial console pointed at
+`snap.ubuntu-desktop-bootstrap.subiquity-server` failing four times in two
+seconds, but the unit's own journal was hidden behind the GUI's
+once-a-second socket retries until the diag unit was taught to read
+`journalctl -u` for that unit directly.
+
+The traceback ends in the snap's bundled apport:
+
+    RuntimeError: Could not determine system package manager.
+                  Please file a bug and provide /etc/os-release!
+
+apport decides the host's package manager from `{ID} | ID_LIKE.split()` and
+requires `debian` in that set. The branding had written `ID_LIKE="ubuntu"`,
+which is true and sufficient for humans and most tools — but not for apport.
+`ID_LIKE` is now `"ubuntu debian"`: PuralvOS is a derivative of a derivative,
+and Ubuntu itself ships `ID_LIKE=debian`. `ID` stays `puralvos`.
+
+Verified in the brand7 boot: subiquity-server active (running), its two
+processes visible in the cgroup, `/run/subiquity/socket` present, installer
+GUI up, no traceback.
+
+### Three self-test faults, three false FAILs
+
+The brand3 boot showed tier 2 failing on a machine where every underlying
+fact was correct. All three were measurement bugs, not image bugs:
+
+| check | what it measured | why it failed | fix |
+| --- | --- | --- | --- |
+| `user-in-audio-group` | `GROUPS=$(id -nG ...)` | `GROUPS` is a bash special variable; assignments are ignored, so it read root's `0` | renamed `UGNAMES`; failure keeps the raw `id`/`getent` evidence |
+| `pipewire-rlimits` | `/proc/PID/limits` with `/^Max real-time priority/` | the kernel spells it `Max realtime priority`; the pattern matched nothing and defaulted to 0 | correct pattern; doc updated (the kernel's spelling, no hyphen) |
+| `pipewire-rt-policy` | `chrt -p` on the main thread, threshold 95 | PipeWire's main thread is SCHED_OTHER by design; RT lives on the data threads, and rtkit grants `rt.prio=20` | any thread with rtprio > 0 passes; the priority is reported, 95 explained as the JACK limit |
+
+sddm and sddm-autologin do include `pam_limits.so`, and the limits are real:
+`pipewire-rlimits` now reads `rtprio 95, memlock unlimited` from the running
+daemon. The lesson recorded in the script: a check that contradicts another
+check is a broken check until proven otherwise — `rtprio-limit` was passing
+through a real PAM session while `GROUPS` insisted nobody was in `audio`.
+
+### A diag unit that survives the boot
+
+`tools/puralvos-diag` + `tools/puralvos-diag.service`, installed and enabled
+only when `PURALVOS_DIAG=1`, gated at boot by `ConditionKernelCommandLine=
+puralvos.diag=1`. It waits (360 s by default, `PURALVOS_DIAG_WAIT`), then
+dumps user, groups, limits, PipeWire threads, the user's systemd units (via
+`runuser` + `XDG_RUNTIME_DIR`, not as root, which had been reading the wrong
+session), failed units, installer unit status/journal, `/run/subiquity`, snap
+changes, and leftovers to the serial console. The cmdline pass that turns it
+on is idempotent and strips stale flags on every build.
+
+With it, the remaining tier 4 FAILs are attributable: audacity, blender, gimp
+and friends are software-rendering timing in a VM, not missing binaries.
+One inherited blemish: the stock `ubuntustudio-dark` icon theme's index.theme
+has no `Size=` field for `places/scalable` or `places/128`, so GTK logs a
+warning under the puralvos-dark rename; it is stock behaviour, not a rename
+artifact.
+
+### The ISO came out smaller than the one it derives from
+
+The build had been shipping 319 MB of package-manager residue, a 120.8 MB
+duplicate installer snap (hardlink broken by the layer merge), a generated
+initrd in the rootfs and a second initrd on the ISO, and 616 MB of content
+the base layer already hid behind whiteouts. Details, numbers and the method
+are in `docs/ISO-SIZE.md`; the result:
+
+| | bytes |
+| --- | ---: |
+| stock Ubuntu Studio 26.04.1 | 7 127 195 648 |
+| PuralvOS, first bootable build | 7 751 788 544 |
+| PuralvOS, final | 7 031 140 352 |
+
+sha256 `805a8f1ced8a734238844c2c8e395857a28951f933084242ff3d6f62153c11fa`.
+The final image is 92 MiB smaller than stock while also carrying TONE3000 in
+four plugin formats and the realtime kernel's modules. Booted as brand7:
+desktop at 59.9 s, every tier 0/2/3 check PASS, installer active.

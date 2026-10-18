@@ -3,20 +3,27 @@
 
 The mark
 --------
-Pur + Alv. Two people, so two traces, drawn as waveforms: one spells a P, the
-other an A, and they interlock. Both are waveforms because audio is the
-discipline that most defines this machine, and because a wordmark drawn as a
-waveform cannot be mistaken for a font sample.
+A P and an A monogram. Pur + Alv, two people, two letters, one signal.
 
-Two things are ruled out on purpose. No orange, because that is Ubuntu's
-trademark and this image is not Ubuntu's. No spectrum either: a spectrum is
-the obvious choice for a three-discipline logo and it is exactly the mark the
-Freesh-derived audio lineage already uses, so an identity built on it would
-read as somebody else's. Two complementary letterforms in three accents, and
-nothing that has to be explained.
+The geometry is deliberately reduced to what a monogram needs: a stem, a
+circular bowl, an apex and a crossbar, all on one grid, all one stroke width.
+An earlier version drew the letters as waveforms, which read as damaged
+glyphs at every size it was asked to work at; a mark that has to survive a
+16 px menu icon cannot spend its budget on texture.
 
-Output is SVG because it stays sharp from a 16 px menu icon to a 4 K wallpaper
-and can be recoloured without re-running anything.
+The three disciplines are carried by colour instead of shape: one gradient
+runs through the whole mark, audio green at the start, video cyan through the
+middle, graphics amber at the end. One line, three colours, nothing that has
+to be explained.
+
+No orange: that is Ubuntu's trademark and this image is not Ubuntu's.
+No spectrum: the obvious three-discipline pictogram, and it is already the
+mark of the Freesh-derived audio lineage.
+
+Output is SVG because it stays sharp at every size, plus PNGs drawn with PIL
+from the same geometry for the two consumers that cannot take SVG at build
+time (plymouth's watermark and the preview). One geometry, several outputs;
+the shapes cannot differ because they are not defined twice.
 
 Usage: make-brand.py [output-dir]
 """
@@ -29,11 +36,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 BRAND = os.path.join(HERE, os.pardir, "brand")
 
-# Every wallpaper has to cover the resolutions people actually plug into, or
-# they get scaled and go soft. 1080p and 1440p are the two that cover most
-# laptops and desktops; 4K for the rest. Ultra-wide is deliberately absent:
-# nobody designing a workstation wallpaper has a 21:9 panel, and generating a
-# spec that is never used is a good way to look like a spec sheet.
+# Wallpaper sizes. 1080p and 1440p cover most panels; 4K covers the rest.
 TARGETS = {
     "1080p": (1920, 1080),
     "1440p": (2560, 1440),
@@ -46,27 +49,187 @@ def load_tokens():
         return json.load(fh)
 
 
-def load_targets():
-    path = os.path.join(BRAND, "targets.json")
-    if not os.path.isfile(path):
-        return []
-    with open(path, encoding="utf-8") as fh:
-        return json.load(fh)
+def hex_rgb(value):
+    """'#0B0E14' -> (11, 14, 20)."""
+    v = value.lstrip("#")
+    return tuple(int(v[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def lerp_rgb(a, b, t):
+    return tuple(int(round(a[i] + (b[i] - a[i]) * t)) for i in range(3))
+
+
+def gradient_stops(tokens):
+    return [hex_rgb(tokens["accent"]["audio"]),
+            hex_rgb(tokens["accent"]["video"]),
+            hex_rgb(tokens["accent"]["graphics"])]
+
+
+def gradient_rgb(tokens, t):
+    """Colour at position t in [0,1] along the discipline gradient."""
+    stops = gradient_stops(tokens)
+    if t <= 0.5:
+        return lerp_rgb(stops[0], stops[1], t / 0.5)
+    return lerp_rgb(stops[1], stops[2], (t - 0.5) / 0.5)
+
+
+def gradient_png(tokens, size):
+    """A diagonal render of the gradient, for compositing through a mask.
+
+    PIL has no gradient primitive; a 2x2 image resized with BILINEAR is a
+    four-corner bilinear blend, which for this palette is indistinguishable
+    from the SVG's linear gradient at preview size.
+    """
+    from PIL import Image
+    stops = gradient_stops(tokens)
+    corner = Image.new("RGB", (2, 2))
+    corner.putpixel((0, 0), stops[0])
+    corner.putpixel((1, 0), lerp_rgb(stops[0], stops[1], 0.45))
+    corner.putpixel((0, 1), lerp_rgb(stops[1], stops[2], 0.35))
+    corner.putpixel((1, 1), stops[2])
+    return corner.resize((size, size), Image.BILINEAR)
+
+
+# ----------------------------------------------------------------------
+# The mark geometry: one definition, consumed by the SVG writer and by both
+# rasterisers. Everything is in a 100 x 100 box.
+# ----------------------------------------------------------------------
+
+MARK_BOX = 100.0
+MARK_STROKE = 9.6          # one stroke width for every part of the mark
+MARK_STEM_X = 27.0
+MARK_TOP = 22.0
+MARK_BASE = 80.0
+MARK_BOWL_R = 15.0         # a true semicircle, not a polygon approximation
+MARK_APEX = 22.0
+MARK_A_L = 46.0
+MARK_A_TIP = 60.0
+MARK_A_R = 74.0
+MARK_BAR_Y = 61.0
+MARK_BAR_X0 = 51.0
+MARK_BAR_X1 = 69.0
+MARK_BAR_AMP = 2.0
+
+
+def bowl_points(n=72):
+    """Right half of a circle: top of the stem, over the bowl, back to it."""
+    cx, cy = MARK_STEM_X, MARK_TOP + MARK_BOWL_R
+    pts = []
+    for i in range(n + 1):
+        a = -math.pi / 2 + math.pi * (i / float(n))
+        pts.append((cx + MARK_BOWL_R * math.cos(a),
+                    cy + MARK_BOWL_R * math.sin(a)))
+    return pts
+
+
+def crossbar_points(n=48):
+    """A single calm period of a wave. Amplitude is a hair over the stroke;
+    enough to read as signal, small enough to stay a crossbar."""
+    pts = []
+    for i in range(n + 1):
+        t = i / float(n)
+        x = MARK_BAR_X0 + (MARK_BAR_X1 - MARK_BAR_X0) * t
+        y = MARK_BAR_Y + MARK_BAR_AMP * math.sin(t * math.pi * 2.0)
+        pts.append((x, y))
+    return pts
+
+
+def mark_shapes():
+    """The mark's parts as point lists, each one continuous.
+
+    paint is a gradient position: the whole mark shares one gradient, and each
+    part is stamped at the colour of its own middle so the pieces read as one
+    line that changes colour rather than three coloured pieces.
+    """
+    return [
+        # P: stem and bowl as one path, the way a P is drawn by hand
+        {"name": "p-stem", "t": 0.16, "pts": [(MARK_STEM_X, MARK_BASE),
+                                              (MARK_STEM_X, MARK_TOP)] + bowl_points()[1:]},
+        # A: apex at the same cap height, legs to the same baseline
+        {"name": "a-left", "t": 0.55, "pts": [(MARK_A_L, MARK_BASE), (MARK_A_TIP, MARK_APEX)]},
+        {"name": "a-right", "t": 0.80, "pts": [(MARK_A_TIP, MARK_APEX), (MARK_A_R, MARK_BASE)]},
+        {"name": "a-bar", "t": 0.97, "pts": crossbar_points()},
+    ]
+
+
+def polyline_path(coords, close=False):
+    parts = []
+    for i, (x, y) in enumerate(coords):
+        cmd = "M" if i == 0 else "L"
+        parts.append("%s%.2f %.2f" % (cmd, x, y))
+    if close:
+        parts.append("Z")
+    return " ".join(parts)
+
+
+def build_mark(tokens, size=512, mono=False):
+    """The mark as SVG: a deep tile, a hairline, and one gradient line."""
+    s = MK = MARK_BOX
+    sw = MARK_STROKE
+    bg_deep = tokens["background"]["deep"]
+    bg_base = tokens["background"]["base"]
+    a, v, g = (tokens["accent"]["audio"], tokens["accent"]["video"],
+               tokens["accent"]["graphics"])
+
+    if mono:
+        stroke = tokens["text"]["primary"]
+        grad = ""
+    else:
+        stroke = "url(#puralvos-grad)"
+        grad = (
+            '  <linearGradient id="puralvos-grad" x1="0" y1="0" x2="1" y2="1">\n'
+            '    <stop offset="0" stop-color="%s"/>\n'
+            '    <stop offset="0.5" stop-color="%s"/>\n'
+            '    <stop offset="1" stop-color="%s"/>\n'
+            '  </linearGradient>\n' % (a, v, g)
+        )
+
+    paths = []
+    for sh in mark_shapes():
+        pts = [(x * s / MK, y * s / MK) for x, y in sh["pts"]]
+        paths.append(
+            '  <path d="%s" fill="none" stroke="%s" stroke-width="%.2f"\n'
+            '        stroke-linecap="round" stroke-linejoin="round"/>'
+            % (polyline_path(pts), stroke, sw * s / MK))
+
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {s:.0f} {s:.0f}"
+     width="{size}" height="{size}" role="img"
+     aria-label="PuralvOS">
+  <title>PuralvOS</title>
+  <desc>A P and an A monogram in one gradient: audio green, video cyan,
+  graphics amber. Two letters, one signal.</desc>
+{grad}  <defs>
+    <linearGradient id="puralvos-tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#121826"/>
+      <stop offset="1" stop-color="{bg_deep}"/>
+    </linearGradient>
+  </defs>
+  <rect width="{s:.0f}" height="{s:.0f}" rx="23" fill="url(#puralvos-tile)"/>
+  <rect x="1.6" y="1.6" width="{s - 3.2:.0f}" height="{s - 3.2:.0f}" rx="21.4"
+        fill="none" stroke="#FFFFFF" stroke-opacity="0.06" stroke-width="0.9"/>
+{chr(10).join(paths)}
+</svg>
+"""
+
+
+def build_wordmark(tokens, width=1200):
+    t = tokens
+    h = int(width * 0.22)
+    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {h}"
+     width="{width}" height="{h}" role="img" aria-label="PuralvOS">
+  <title>PuralvOS</title>
+  <text x="0" y="{h * 0.72:.0f}" font-family="Inter, 'DejaVu Sans', sans-serif"
+        font-size="{h * 0.66:.0f}" font-weight="600" letter-spacing="{h * 0.01:.0f}"
+        fill="{t['text']['primary']}">Pural<tspan fill="{t['accent']['graphics']}">v</tspan>OS</text>
+  <text x="{width * 0.415:.0f}" y="{h * 0.72:.0f}" font-family="Inter, 'DejaVu Sans', sans-serif"
+        font-size="{h * 0.26:.0f}" letter-spacing="{h * 0.06:.0f}"
+        fill="{t['text']['muted']}">{t['tagline'].upper()}</text>
+</svg>
+"""
 
 
 def trace(stops, width, height, points=180, amp=0.30, ripple=1.0):
-    """A waveform path through a list of (x_fraction, y_fraction) waypoints.
-
-    Interpolated with a smooth curve rather than straight lines, because a
-    waveform drawn as a polyline reads as a chart, and one drawn as a wave
-    reads as a wave.
-
-    The ripple is deliberately gentle and low frequency. A first pass used six
-    cycles across the whole path and 180 samples, which turned the bowl of the
-    P into a row of spikes: the oscillation was faster than the sample rate
-    could follow, so it aliased. Fewer cycles and fewer samples is what makes
-    it look like a drawn line instead of a damaged one.
-    """
+    """A waveform path through waypoints, for the discipline glyphs."""
     def point(t):
         for i in range(len(stops) - 1):
             x0, y0 = stops[i]
@@ -82,127 +245,10 @@ def trace(stops, width, height, points=180, amp=0.30, ripple=1.0):
     for i in range(points + 1):
         t = i / points
         bx, by = point(t)
-        # Fade the ripple in and out along the path so endpoints stay anchored.
         env = math.sin(t * math.pi) ** 0.5
         wobble = math.sin(t * math.pi * 2.0) * height * amp * 0.045 * ripple
         d.append((bx, by + wobble * env))
     return d
-
-
-def polyline_path(coords, close=False):
-    parts = []
-    for i, (x, y) in enumerate(coords):
-        cmd = "M" if i == 0 else "L"
-        parts.append("%s%.2f %.2f" % (cmd, x, y))
-    if close:
-        parts.append("Z")
-    return " ".join(parts)
-
-
-def mark_geometry(size):
-    """The one definition of the mark's geometry.
-
-    Both the SVG writer and the PIL preview consume this. They each used to
-    carry their own copy and they drifted: after the strokes were rebalanced,
-    a fixed SVG still rendered with the old spiky preview that still had the
-    stray dot in the corner. A preview that shows something the product does
-    not do is worse than no preview at all, because it is believed. So there is
-    now one place the shape is defined and everything reads from it.
-    """
-    s = float(size)
-    m = s * 0.16
-    w = s - 2 * m
-
-    # Both letters share a baseline and a cap height. The first pass let the P
-    # run taller than the A and the pair read as unbalanced rather than as a
-    # monogram.
-    baseline, cap = 0.88, 0.18
-
-    def shift(pts):
-        return [(x + m, y) for x, y in pts]
-
-    return {
-        "size": s,
-        "margin": m,
-        "box": (s * 0.03, s * 0.03, s * 0.97, s * 0.97),
-        "corner": s * 0.18,
-        "box_radius": s * 0.15,
-        "edge_width": s * 0.008,
-        # roles, so the colours live in one place and cannot drift either
-        "shapes": [
-            ("audio", s * 0.042, shift(trace([(0.06, baseline), (0.06, cap)], w, s, 90, 0.40))),
-            # The bowl is an arc with seven waypoints, not the five-corner kink
-            # it was. Five points left a hard corner where the curve turned over
-            # and the P read as a flag on a pole rather than a letter.
-            ("audio", s * 0.042, shift(trace([(0.06, cap), (0.20, cap + 0.01), (0.31, cap + 0.09),
-                                             (0.34, 0.38), (0.30, 0.52), (0.19, 0.58),
-                                             (0.06, 0.58)], w, s, 140, 0.16, ripple=0.4))),
-            ("video", s * 0.042, shift(trace([(0.60, baseline), (0.75, cap)], w, s, 90, 0.30))),
-            ("video", s * 0.042, shift(trace([(0.75, cap), (0.90, baseline)], w, s, 90, 0.30))),
-            # graphics on the crossbar: the third discipline is the one that
-            # holds the two letters together
-            ("graphics", s * 0.038, shift(trace([(0.655, 0.62), (0.845, 0.62)], w, s, 40, 0.10, ripple=0.3))),
-        ],
-    }
-
-
-def build_mark(tokens, size=512, mono=False):
-    t = tokens
-    bg = t["background"]["base"]
-    edge = t["background"]["edge"]
-    if mono:
-        # One colour, for engraving, single-colour print, a boot splash on a
-        # monochrome menu, or anywhere the three accents cannot survive. This
-        # is not the colour mark faded down: it drops the accent encoding
-        # entirely, because half-strength green is just a slightly darker
-        # white.
-        colours = {k: t["text"]["primary"] for k in ("audio", "video", "graphics")}
-    else:
-        colours = {
-            "audio": t["accent"]["audio"],
-            "video": t["accent"]["video"],
-            "graphics": t["accent"]["graphics"],
-        }
-    g = mark_geometry(size)
-    s = g["size"]
-    x0, y0, x1, y1 = g["box"]
-
-    paths = "\n".join(
-        '  <path d="%s" fill="none" stroke="%s" stroke-width="%.1f"\n'
-        '        stroke-linecap="round" stroke-linejoin="round"/>'
-        % (polyline_path(pts), colours[role], width)
-        for role, width, pts in g["shapes"])
-
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {s:.0f} {s:.0f}"
-     width="{size}" height="{size}" role="img"
-     aria-label="PuralvOS">
-  <title>PuralvOS</title>
-  <desc>Pur and Alv: a P and an A drawn as waveforms. Three accents, one per
-  discipline: the P is audio, the A is video, the crossbar is graphics.</desc>
-  <rect width="{s:.0f}" height="{s:.0f}" rx="{g['corner']:.0f}" fill="{bg}"/>
-  <rect x="{x0:.0f}" y="{y0:.0f}" width="{x1 - x0:.0f}" height="{y1 - y0:.0f}"
-        rx="{g['box_radius']:.0f}" fill="none" stroke="{edge}"
-        stroke-width="{g['edge_width']:.0f}"/>
-
-{paths}
-</svg>
-"""
-
-
-def build_wordmark(tokens, width=1200):
-    t = tokens
-    h = int(width * 0.22)
-    return f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {h}"
-     width="{width}" height="{h}" role="img" aria-label="PuralvOS">
-  <title>PuralvOS</title>
-  <text x="0" y="{h * 0.72:.0f}" font-family="Inter, 'DejaVu Sans', sans-serif"
-        font-size="{h * 0.66:.0f}" font-weight="600" letter-spacing="{h * 0.02:.0f}"
-        fill="{t['text']['primary']}">Pural<tspan fill="{t['accent']['graphics']}">v</tspan>OS</text>
-  <text x="{width * 0.415:.0f}" y="{h * 0.72:.0f}" font-family="Inter, 'DejaVu Sans', sans-serif"
-        font-size="{h * 0.26:.0f}" letter-spacing="{h * 0.06:.0f}"
-        fill="{t['text']['muted']}">{t['tagline'].upper()}</text>
-</svg>
-"""
 
 
 def build_icons(tokens, size=64):
@@ -240,225 +286,222 @@ def build_icons(tokens, size=64):
     return out
 
 
-def render_preview(tokens, png_path, size=900):
-    """Rasterise the mark with PIL so it can actually be looked at.
+# ----------------------------------------------------------------------
+# Rasterisers
+# ----------------------------------------------------------------------
 
-    The SVG is the deliverable, but SVG cannot be viewed without a rasteriser
-    and this machine has none: no rsvg-convert, no inkscape, no ImageMagick,
-    no chromium. Rather than ship a logo nobody has seen, draw the same
-    geometry straight into a bitmap. It reads mark_geometry(), not a private
-    copy, so what gets reviewed is what gets built.
+def _render_mark_mask(size, stroke_scale=1.0, ss=2):
+    """The mark's strokes as a white-on-black L mask at size x ss."""
+    from PIL import Image, ImageDraw
+    px = int(size * ss)
+    f = px / MARK_BOX
+    mask = Image.new("L", (px, px), 0)
+    d = ImageDraw.Draw(mask)
+    w = max(2, int(MARK_STROKE * f * stroke_scale * 1.02))
+    for sh in mark_shapes():
+        pts = [(x * f, y * f) for x, y in sh["pts"]]
+        # Segment at a time, with round joints drawn by hand. Pillow's own
+        # joint="curve" fills the wedge between consecutive segments and on
+        # a fine polyline that wedge comes out as a sliver comb: the mark
+        # renders as a hedgehog. Overlapping caps are the same union without
+        # the wedges.
+        for a, b in zip(pts, pts[1:]):
+            d.line([a, b], fill=255, width=w)
+        for x, y in pts:
+            d.ellipse([x - w / 2, y - w / 2, x + w / 2, y + w / 2], fill=255)
+    return mask
+
+
+def render_preview(tokens, png_path, size=900):
+    """Rasterise the mark with the tile and the gradient, so it can be judged.
+
+    The SVG is the deliverable but there is no SVG rasteriser on this machine;
+    this draws the same geometry through the same gradient so what gets
+    reviewed is what gets built.
     """
     try:
         from PIL import Image, ImageDraw
     except ImportError:
         return None
 
-    g = mark_geometry(size)
-    s = g["size"]
-    colours = {
-        "audio": tokens["accent"]["audio"],
-        "video": tokens["accent"]["video"],
-        "graphics": tokens["accent"]["graphics"],
-    }
+    ss = 2
+    px = size * ss
+    tile = Image.new("RGB", (px, px), hex_rgb(tokens["background"]["deep"]))
+    d = ImageDraw.Draw(tile)
+    top = hex_rgb("#121826")
+    bot = hex_rgb(tokens["background"]["deep"])
+    for y in range(px):
+        d.line([(0, y), (px, y)], fill=lerp_rgb(top, bot, y / float(px)))
+    rounded = Image.new("L", (px, px), 0)
+    ImageDraw.Draw(rounded).rounded_rectangle([0, 0, px - 1, px - 1],
+                                              radius=int(23 * px / MARK_BOX), fill=255)
 
-    im = Image.new("RGB", (int(s), int(s)), tokens["background"]["base"])
-    d = ImageDraw.Draw(im)
-    d.rounded_rectangle(list(g["box"]), radius=int(g["box_radius"]),
-                        outline=tokens["background"]["edge"],
-                        width=max(1, int(g["edge_width"])))
+    grad = gradient_png(tokens, px)
+    mask = _render_mark_mask(size, ss=ss)
+    tile.paste(Image.composite(grad, Image.new("RGB", (px, px), (0, 0, 0)), mask), (0, 0), mask)
 
-    for role, width, pts in g["shapes"]:
-        d.line(pts, fill=colours[role], width=max(2, int(width)), joint="curve")
+    frame = Image.new("L", (px, px), 0)
+    ImageDraw.Draw(frame).rounded_rectangle(
+        [int(1.6 * px / MARK_BOX), int(1.6 * px / MARK_BOX),
+         px - 1 - int(1.6 * px / MARK_BOX), px - 1 - int(1.6 * px / MARK_BOX)],
+        radius=int(21.4 * px / MARK_BOX), outline=64,
+        width=max(1, int(0.9 * px / MARK_BOX)))
+    tile.paste((255, 255, 255), (0, 0), frame)
 
-    im.save(png_path)
+    out = Image.new("RGBA", (px, px), (0, 0, 0, 0))
+    out.paste(tile, (0, 0), rounded)
+    out = out.resize((size, size), Image.LANCZOS)
+    out.save(png_path)
     return png_path
 
 
 def render_mark_png(tokens, path, size=256, transparent=False):
-    """Rasterise just the mark, on its own, for the screens that want a bitmap.
-
-    plymouth's splash watermark is a PNG and nothing else, and the SDDM logo is
-    a bitmap too. Neither can take the SVG that is the actual deliverable, and
-    there is no SVG rasteriser on the build machine to convert it.
-
-    So this draws the same mark_geometry() that build_mark() writes out, as a
-    bitmap. One geometry, two renderers: the shapes cannot differ because they
-    are not defined twice.
-
-    Transparent is for plymouth, which composites the watermark over its own
-    background and would otherwise show a black square in the corner of every
-    boot. Opaque is for SDDM, which shows the logo on the wallpaper and wants
-    the mark's own rounded box behind it.
-    """
+    """The mark alone, for plymouth and SDDM, which take bitmaps only."""
     try:
         from PIL import Image, ImageDraw
     except ImportError:
         return None
 
-    g = mark_geometry(size)
-    s = g["size"]
-    colours = {
-        "audio": tokens["accent"]["audio"],
-        "video": tokens["accent"]["video"],
-        "graphics": tokens["accent"]["graphics"],
-    }
+    ss = 2
+    px = size * ss
+    mask = _render_mark_mask(size, ss=ss)
+    grad = gradient_png(tokens, px)
 
-    mode = "RGBA" if transparent else "RGB"
-    fill = (0, 0, 0, 0) if transparent else hex_rgb(tokens["background"]["base"])
-    im = Image.new(mode, (int(s), int(s)), fill)
-    d = ImageDraw.Draw(im)
-
-    x0, y0, x1, y1 = g["box"]
-    d.rounded_rectangle([x0, y0, x1, y1], radius=int(g["box_radius"]),
-                        outline=tokens["background"]["edge"],
-                        width=max(1, int(g["edge_width"])))
-
-    for role, width, pts in g["shapes"]:
-        d.line(pts, fill=colours[role], width=max(2, int(width)), joint="curve")
-
+    if transparent:
+        body = Image.new("RGB", (px, px), (0, 0, 0))
+        body = Image.composite(grad, body, mask)
+        im = Image.new("RGBA", (px, px), (0, 0, 0, 0))
+        im.paste(body, (0, 0), mask)
+    else:
+        im = Image.new("RGB", (px, px), hex_rgb(tokens["background"]["deep"]))
+        im = Image.composite(grad, im, mask)
+    im = im.resize((size, size), Image.LANCZOS)
     im.save(path)
     return path
 
 
-def hex_rgb(value):
-    """'#0B0E14' -> (11, 14, 20).
+def _bezier(p0, p1, p2, p3, t):
+    u = 1.0 - t
+    return (u * u * u * p0[0] + 3 * u * u * t * p1[0] + 3 * u * t * t * p2[0] + t * t * t * p3[0],
+            u * u * u * p0[1] + 3 * u * u * t * p1[1] + 3 * u * t * t * p2[1] + t * t * t * p3[1])
 
-    The tokens are hex because that is what belongs in tokens.json and in CSS
-    and in SVG. PIL wants a tuple. Converting here keeps the palette authored
-    once and readable, instead of duplicated as magic numbers in the drawing
-    code, which is how two places end up disagreeing about what green is.
+
+def _ribbon_polygon(p0, p1, p2, p3, w_start, w_mid, w_end, n=220):
+    """A tapered ribbon: the centreline's offset curves, out and back.
+
+    PIL draws constant-width lines only; a polygon between two offset copies
+    of the centreline is how a stroke that grows and thins like silk gets a
+    smooth silhouette with no visible joints.
     """
-    v = value.lstrip("#")
-    return tuple(int(v[i:i + 2], 16) for i in (0, 2, 4))
-
-
-def _glow(layer, cx, cy, radius, colour, strength):
-    """Composite one soft coloured light onto a layer, for the wallpaper."""
-    from PIL import Image, ImageDraw, ImageFilter
-
-    w, h = layer.size
-    mask = Image.new("L", (w, h), 0)
-    ImageDraw.Draw(mask).ellipse(
-        [cx - radius, cy - radius, cx + radius, cy + radius], fill=255)
-    mask = mask.filter(ImageFilter.GaussianBlur(radius * 0.55))
-    mask = mask.point(lambda v: int(v * strength))
-
-    wash = Image.new("RGB", (w, h), colour)
-    layer.paste(wash, (0, 0), mask)
-
-
-# The wallpaper palette. Deliberately wider than the three accents: three
-# colours repeated down a frame reads as a gradient with stripes. Every entry
-# is chosen to stay bright ON black rather than to be tinted by it, which is
-# the whole point of the additive glow below.
-VIVID = [
-    "#22D3EE",  # cyan
-    "#34D399",  # green
-    "#FBBF24",  # amber
-    "#A78BFA",  # violet
-    "#F472B6",  # pink
-    "#A3E635",  # lime
-    "#38BDF8",  # sky
-    "#FB7185",  # rose
-]
+    upper, lower = [], []
+    for i in range(n + 1):
+        t = i / float(n)
+        cx, cy = _bezier(p0, p1, p2, p3, t)
+        dx, dy = _bezier(p0, p1, p2, p3, min(1.0, t + 0.004))
+        ex, ey = _bezier(p0, p1, p2, p3, max(0.0, t - 0.004))
+        tx, ty = dx - ex, dy - ey
+        tl = math.hypot(tx, ty) or 1.0
+        nx, ny = -ty / tl, tx / tl
+        # width profile: rises quickly, holds, tapers at the far end
+        prof = (w_start + (w_mid - w_start) * min(1.0, t / 0.35)) if t < 0.35 \
+            else (w_mid + (w_end - w_mid) * ((t - 0.35) / 0.65) ** 1.4)
+        hw = prof / 2.0
+        upper.append((cx + nx * hw, cy + ny * hw))
+        lower.append((cx - nx * hw, cy - ny * hw))
+    return upper + lower[::-1]
 
 
 def build_wallpaper(tokens, width=3840, height=2160, variant="deep"):
-    """A field of vivid sinusoids on black.
+    """Night signal: a deep field, three coloured atmospheres, three ribbons.
 
-    Every line is a sum of sines, because a sine is what audio looks like and
-    this is a machine for audio. Lines are drawn thin and bright, then a blurred
-    copy of the same lines is added back on top: that additive pass is what
-    makes them glow rather than merely be coloured. Additive over black can
-    only brighten, which is why nothing goes muddy the way the earlier low
-    opacity washes did.
+    The previous wallpaper was a dense field of thin sinusoids and it is the
+    reason this one is sparse. Tight thin lines at high density read as
+    noise, not as craft, and no amount of glow fixes that: what fixes it is
+    keeping three ribbons and giving each one room, a taper, and its own
+    column of light to sit in.
 
-    Two things keep it a wallpaper rather than a poster. The field is denser
-    and brighter low in the frame and thins out towards the top, where the icon
-    grid lives. And there is no logo: a wordmark across a desktop is an
-    advertisement.
+    Three, not eight: the palette is three disciplines, and a wallpaper that
+    needs a fourth colour is telling a different story.
     """
     from PIL import Image, ImageDraw, ImageChops, ImageFilter
 
-    # Draw at SS times the target size and downsample, which is what makes the
-    # lines smooth rather than stepped. PIL has no anti-aliased line drawing, so
-    # a 1px diagonal line at native resolution is a staircase and a field of
-    # them reads as noise. Two times is enough; three is not worth the memory at
-    # 4K, where the intermediate canvas is already 100 MB a layer.
-    SS = 2
-    width, height = width * SS, height * SS
-    w, h = width, height
+    ss = 2
+    w, h = width * ss, height * ss
+    base_deep = hex_rgb(tokens["background"]["deep"])
+    base_soft = hex_rgb("#0A0E16")
 
-    # True black rather than the deep blue of tokens.json. The brief is a black
-    # background, and on black the vivid lines are at their most vivid.
-    im = Image.new("RGB", (w, h), (0, 0, 0))
+    # The field: a vertical wash, soft at the top, deepest at the bottom.
+    im = Image.new("RGB", (w, h), base_deep)
+    d = ImageDraw.Draw(im)
+    for y in range(h):
+        d.line([(0, y), (w, y)], fill=lerp_rgb(base_soft, base_deep, y / float(h)))
+
+    # Atmosphere. Three big, dim lights in the three discipline colours. Dim is
+    # the point: these are here to tint the black, not to be looked at.
+    atmos = [
+        (0.10, 0.95, 0.74, tokens["accent"]["audio"], 0.15),
+        (0.82, 0.42, 0.85, tokens["accent"]["video"], 0.15),
+        (0.72, 1.02, 0.66, tokens["accent"]["graphics"], 0.13),
+    ]
+    for fx, fy, fr, colour, strength in atmos:
+        rad = max(w, h) * fr * 0.55
+        cx, cy = w * fx, h * fy
+        mask = Image.new("L", (w, h), 0)
+        ImageDraw.Draw(mask).ellipse([cx - rad, cy - rad, cx + rad, cy + rad], fill=255)
+        mask = mask.filter(ImageFilter.GaussianBlur(rad * 0.5))
+        mask = mask.point(lambda v, s=strength: int(v * s))
+        im.paste(Image.new("RGB", (w, h), colour), (0, 0), mask)
+
+    # The ribbons. One per discipline, ascending left to right, the way a
+    # signal rises. Each sits low enough that the top of the frame stays
+    # quiet for icons.
+    ribbons = [
+        # colour, start, c1, c2, end, widths (start, mid, end)
+        (0, (0.02, 0.86), (0.28, 0.80), (0.55, 0.92), (0.99, 0.60), (2, 22, 5)),
+        (1, (0.00, 0.97), (0.34, 0.90), (0.62, 1.00), (1.00, 0.68), (3, 30, 7)),
+        (2, (0.06, 1.00), (0.30, 0.96), (0.62, 1.02), (0.97, 0.74), (2, 20, 5)),
+    ]
+    stops = gradient_stops(tokens)
+
     lines = Image.new("RGB", (w, h), (0, 0, 0))
-    d = ImageDraw.Draw(lines)
+    hot = Image.new("RGB", (w, h), (0, 0, 0))
+    dl = ImageDraw.Draw(lines)
+    dh = ImageDraw.Draw(hot)
+    unit = h / 1080.0 * 1.15 * ss / 2.0
+    for idx, p0, p1, p2, p3, (w0, wm, w1) in ribbons:
+        colour = stops[idx]
+        poly = _ribbon_polygon((p0[0] * w, p0[1] * h), (p1[0] * w, p1[1] * h),
+                               (p2[0] * w, p2[1] * h), (p3[0] * w, p3[1] * h),
+                               w0 * unit, wm * unit, w1 * unit)
+        dl.polygon(poly, fill=colour)
+        # a thin, brighter core on the same centreline, for the metal shine
+        core = _ribbon_polygon((p0[0] * w, p0[1] * h), (p1[0] * w, p1[1] * h),
+                               (p2[0] * w, p2[1] * h), (p3[0] * w, p3[1] * h),
+                               max(1, w0 * unit * 0.30), wm * unit * 0.22,
+                               max(1, w1 * unit * 0.30))
+        dh.polygon(core, fill=tuple(min(255, int(c + (255 - c) * 0.35)) for c in colour))
 
-    band = max(1, w // (1800 * SS))
-    # More lines on a bigger screen, but sub-linearly: doubling the resolution
-    # should not quadruple the work.
-    count = int(46 + 42 * (height / (2160.0 * SS)) ** 0.5)
-
-    for n in range(count):
-        u = n / float(max(1, count - 1))
-
-        # Biased low: y in [0.28, 0.97]. Empty at the top for the icons, dense
-        # signal underneath them.
-        y = h * (0.28 + 0.69 * (u ** 1.35))
-        # Amplitude grows towards the bottom too, so the frame has a shape
-        # instead of being an even hatch.
-        amp = h * 0.005 + h * 0.038 * (u ** 1.6)
-
-        # Per line frequency and phase, so no two repeat, with a slow drift so
-        # the wave appears to travel sideways. The golden angle keeps
-        # neighbouring lines from ever lining up into visible stripes.
-        f1 = 1.2 + 5.5 * ((n * 7919) % 100) / 100.0
-        f2 = f1 * (2.1 + 0.9 * ((n * 6271) % 100) / 100.0)
-        f3 = f1 * 0.37
-        ph = n * 2.399963
-
-        colour = hex_rgb(VIVID[(n * 5) % len(VIVID)])
-        # Brightness falls off towards the top, matching the density gradient.
-        lum = 0.78 + 0.22 * (u ** 0.8)
-        colour = tuple(min(255, int(c * lum)) for c in colour)
-
-        pts = []
-        step = max(1, w // (1100 * SS))
-        for i in range(0, w + step, step):
-            x = i / float(w)
-            wave = (math.sin(x * math.pi * 2 * f1 + ph) * 0.62
-                    + math.sin(x * math.pi * 2 * f2 + ph * 1.7) * 0.26
-                    + math.sin(x * math.pi * 2 * f3 + ph * 0.4) * 0.12)
-            # Fade at the left and right margins so lines do not stop dead
-            # against the frame edge.
-            env = min(1.0, (min(x, 1.0 - x) / 0.08) ** 0.6)
-            pts.append((i, y + wave * amp * env))
-        d.line(pts, fill=colour, width=band, joint="curve")
-
-    # The glow: a blurred copy of the lines added back additively. On black
-    # this is a pure brightening, so vivid stays vivid.
-    glow = lines.filter(ImageFilter.GaussianBlur(radius=max(3, h // 130)))
-    im = ImageChops.add(im, glow.point(lambda v: min(255, int(v * 1.15))))
+    # Compose: atmosphere, then the ribbons, then two haloes, then the core.
+    halo1 = lines.filter(ImageFilter.GaussianBlur(radius=max(6, h // 90)))
+    halo2 = lines.filter(ImageFilter.GaussianBlur(radius=max(18, h // 26)))
+    im = ImageChops.add(im, halo2.point(lambda v: min(255, int(v * 0.45))))
+    im = ImageChops.add(im, halo1.point(lambda v: min(255, int(v * 0.75))))
     im = ImageChops.add(im, lines)
+    im = ImageChops.add(im, hot)
 
-    # A tighter second halo, so the cores look hot rather than flat.
-    hot = lines.filter(ImageFilter.GaussianBlur(radius=max(2, h // 430)))
-    im = ImageChops.add(im, hot.point(lambda v: min(255, int(v * 0.75))))
+    # Vignette: darken the corners so the eye lands in the middle.
+    vig = Image.new("L", (w, h), 0)
+    ImageDraw.Draw(vig).ellipse([-w * 0.25, -h * 0.35, w * 1.25, h * 1.35], fill=255)
+    vig = vig.filter(ImageFilter.GaussianBlur(max(w, h) // 12))
+    vig = vig.point(lambda v: 150 + int(v * 0.41))
+    im = ImageChops.multiply(im, Image.merge("RGB", (vig, vig, vig)))
 
-    # Fade the top, so an icon has somewhere quiet to sit even where a line
-    # happens to run.
-    fade = Image.new("L", (w, h), 255)
-    fd = ImageDraw.Draw(fade)
-    for yy in range(0, int(h * 0.30)):
-        fd.line([(0, yy), (w, yy)], fill=255 - int(150 * (yy / (h * 0.30)) ** 1.6))
-    im = ImageChops.multiply(im, fade.convert("RGB"))
-
-    # Down to the real size. The resampling also softens the glow, which is
-    # why the glow is applied after the lines are drawn but before this: the
-    # order matters and the tuning above assumed it.
-    return im.resize((width // SS, height // SS), Image.LANCZOS)
+    # Grain. Large flat gradients band on 8-bit panels; a little noise is the
+    # standard dither and it also gives the black a filmic texture.
+    im = im.resize((width, height), Image.LANCZOS)
+    noise = Image.effect_noise((width, height), 12).convert("RGB")
+    im = Image.blend(im, ImageChops.overlay(im, noise), 0.10)
+    return im
 
 
 def main():
@@ -487,21 +530,10 @@ def main():
 
     preview = os.path.join(outdir, "preview-mark.png")
     if render_preview(tokens, preview):
-        print("\npreview: %s  (delete it, or keep it for review)" % preview)
+        print("\npreview: %s" % preview)
     else:
         print("\npreview skipped: PIL not available")
 
-    # The rasterised mark, for the places that cannot take an SVG.
-    #
-    # plymouth's watermark is a PNG and nothing else, and there is no SVG
-    # rasteriser on this build machine, so the PNG is drawn here from the same
-    # mark_geometry() the SVG is written from. Two sources would drift; this is
-    # one source with two outputs.
-    #
-    # This is not only for plymouth. The SDDM logo is also a bitmap in the
-    # theme, and having it here means neither screen needs a rasteriser at
-    # build time, which is what kept the splash step from silently producing a
-    # theme with no watermark in it.
     for name, px, transparent in (("mark-256.png", 256, False),
                                   ("mark-alpha-256.png", 256, True)):
         path = os.path.join(outdir, name)
@@ -520,6 +552,18 @@ def main():
             print("  %s  %dx%d  %.1f MB" % (
                 os.path.relpath(path, outdir), px[0], px[1],
                 os.path.getsize(path) / 1048576.0))
+        # The Plasma look-and-feel picker wants a JPEG for the full screen
+        # preview. Converted from the 1080p render rather than rendered again:
+        # it is the same picture at a smaller size and rebuilding it would only
+        # make the two capable of drifting apart.
+        from PIL import Image
+        lnf = os.path.join(outdir, "lnf-fullscreenpreview.jpg")
+        Image.open(os.path.join(outdir, "wallpaper-1080p.png")) \
+            .convert("RGB").save(lnf, quality=88, optimize=True)
+        written.append(os.path.relpath(lnf, outdir))
+        print("  %s  %dx%d  %.1f MB" % (
+            os.path.relpath(lnf, outdir), 1920, 1080,
+            os.path.getsize(lnf) / 1048576.0))
     except ImportError:
         print("wallpapers skipped: PIL not available")
     return 0
