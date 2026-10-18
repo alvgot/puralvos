@@ -50,20 +50,26 @@ exists so that stays a tracked decision rather than a surprise.
 
 ## Images
 
-Two, built from the same curated filesystem so the thing you try live is the
-thing you get installed:
+Both are built from the same curated filesystem, so the thing you try live is
+the thing you get installed.
 
-| | boots to | installs to disk |
-| --- | --- | --- |
-| **PuralvOS** | full workstation, live | yes, via ubiquity |
-| **PuralvOS Live** | full workstation, live | optional |
+| build | boots to | installs to disk | how |
+| --- | --- | --- | --- |
+| **PuralvOS Live** (default) | full workstation, live | no | `tools/build-live.sh` |
+| **PuralvOS** (installable) | full workstation, live | yes, via the stock Ubuntu installer | `PURALVOS_INSTALLER=1 tools/build-live.sh` |
 
-Ubuntu Studio 26.04.1 already ships ubiquity 26.04.1 and the casper live
-machinery, so neither image is being built from nothing. See
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how, and for the one decision
-still open: whether the installed system gets our package set through a
-preseed, through an install-then-exclude pass, or by shipping a curated
-filesystem wholesale.
+The default is the Live image because that is the one that is measured and
+used: it masks snapd, one of the two largest boot costs on the stock ISO (the
+other is `ldconfig`), and it is already excluded by
+[`excludes.list`](excludes.list). The cost is the
+snap-based installer; `PURALVOS_INSTALLER=1` builds the other variant with
+snapd kept.
+
+Boot to a usable Plasma desktop is **about 50 seconds** on a 2016 ThinkPad
+T460s from a USB stick, and **43–44 seconds** (kernel start to desktop) under
+KVM with the ISO throttled to 25 MB/s. How that is measured, and what it
+costs, is in [docs/PERFORMANCE.md](docs/PERFORMANCE.md); the session that
+found it is in [docs/WORK-REPORT.md](docs/WORK-REPORT.md).
 
 ## Layout
 
@@ -78,7 +84,8 @@ brand/assets/              generated mark, wordmark, glyphs, wallpapers
 tools/make-brand.py        generate every brand asset from tokens.json
 tools/make-package-declaration.py   derive the package list from tasks.list
 tools/report-packages.py   inventory and removal proposal, from the built rootfs
-tools/build-live.sh        build the live image
+tools/build-live.sh        build the live image (or the installable one)
+scripts/kvmboottime.sh     measure boot-to-desktop, with the ISO throttled
 tools/puralvos-selftest    verify a booted image from the inside
 tools/puralvos-selftest.service  the unit that runs it at boot, opt-in
 tools/puralvos-rt-fix      the in-image real time audio fix
@@ -159,10 +166,16 @@ Studio* rather than for the substring *ubuntu*, so those two stay.
 
 ## Status
 
-The image builds and boots. A booted image reports its own kernel, its own
-`os-release` and every check's result over the serial port, so "is this image
-actually PuralvOS" is answered from outside the machine rather than by looking
-at the build log.
+The image builds, boots, and reaches a usable desktop in about 50 seconds on
+the laptop it was made for. The live session autologins as `puralvos` and an
+ordinary `puralv` account exists for a console or ssh login.
+
+Verification is opt-in so it does not cost boot time or launch applications:
+`PURALVOS_SELFTEST=1` puts `console=ttyS0,115200n8` and `puralvos.selftest=1`
+on the menu entries, and the self test then reports the running kernel,
+`os-release` and every check over the serial port. A normal build boots with
+the stock kernel line; `scripts/kvmboottime.sh` is the boot-time measurement,
+using the marker the live session writes to the serial port.
 
 See [docs/WORK-REPORT.md](docs/WORK-REPORT.md) for where the last build stands
 and what is still open.
@@ -174,9 +187,10 @@ Not yet done:
   in it.
 - the non-free manifest tool, so that shipping proprietary software stays a
   tracked decision (`tools/manifest.py`)
-- the installer decision: whether an installed system gets this package set
-  through a preseed, through an install-then-exclude pass, or by shipping a
-  curated filesystem wholesale. It is Alv and Puria's to make.
+- the installer path. The default build is the Live image (snapd masked);
+  `PURALVOS_INSTALLER=1` keeps snapd and the stock snap installer. How the
+  installed system should get this package set — preseed, install-then-exclude,
+  or the curated filesystem wholesale — is still Alv and Puria's to decide.
 - the icon theme, the Plasma theme and the app menu XML. `ubuntustudio-look`,
   `ubuntustudio-icon-theme` and `ubuntustudio-menu` are still installed and
   still Ubuntu Studio's, which makes the icon theme the largest remaining

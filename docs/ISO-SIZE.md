@@ -1,11 +1,18 @@
 # ISO size: why the image grew, and what was done about it
 
 The question that produced this document: *why is PuralvOS bigger than the
-Ubuntu Studio ISO it is built from?* The short answer is that it was not
-supposed to be, and most of the difference was build residue rather than the
-product. It is now smaller than the ISO it derives from while carrying
-TONE3000, a second kernel's worth of real-time modules, and the PuralvOS
-branding.
+Ubuntu Studio ISO it is built from?* The short answer is that most of the
+first growth was build residue rather than the product, and removing it made
+the 0843 build smaller than stock.
+
+**The current build is bigger again, and this file says why rather than
+pretending otherwise.** The 2026-10-18 20:45 Live image is 7 348 336 640 bytes,
+221 MB *above* stock. It carries the realtime kernel's modules, TONE3000 in
+four plugin formats, and — the item still to remove — a 120 MB installer snap
+that the Live build masks and therefore never uses. See
+[the current build](#the-current-build-2026-10-18) below. Everything above
+that section describes the 0843 build and is kept as the record of the
+residue work.
 
 All figures below are the files on disk, in bytes, measured on 2026-10-18.
 
@@ -167,3 +174,30 @@ PURALVOS_DIAG=1 tools/build-live.sh --keep --author-only
 `gone.list` is produced by the build itself (the rsync diff between the
 read-only union and the merged tree); the loop above is safe by construction:
 it removes only paths the final image already hides.
+
+
+## The current build (2026-10-18)
+
+The ISO that boots in about 50 seconds on the T460s is the Live build, and it
+is larger than stock:
+
+| image | bytes | GiB |
+| --- | ---: | ---: |
+| Ubuntu Studio 26.04.1 stock | 7 127 195 648 | 6.64 |
+| PuralvOS Live (current, 2045) | 7 348 336 640 | 6.84 |
+
+The top layer is 586 MB uncompressed / 358 MB in the ISO. Its largest files:
+
+| file | bytes | needed? |
+| --- | ---: | --- |
+| `var/lib/snapd/{seed/,}snaps/ubuntu-desktop-bootstrap_589.snap` | 120 856 576 (one inode, hardlinked) | **no in the Live build** — snapd and the installer are masked, so nothing reads it. This is the 120 MB duplicate the layer merge created: the same snap is already in `minimal.squashfs`, and the diff stages it again because the unpack broke the hardlink with the seed copy |
+| `usr/lib/{vst3,lv2,clap}/TONE3000*` + `usr/bin/TONE3000` | ~96 MB | yes — the NAM player is part of the audio set |
+| `boot/vmlinuz` + `System.map` for 7.0.0-38-realtime | ~28 MB | yes |
+| `usr/share/presage/database_es.db` | 24 MB | no — Spanish predictive-text database inherited from the base |
+
+**Identified saving, not yet taken:** deleting the snap from the working copy
+in the Live branch would whiteout the base copy (a tombstone costs a few
+bytes) and drop the staged duplicate from the top layer — about 120 MB off the
+ISO. It is one `rm` in `tools/build-live.sh` inside the `PURALVOS_INSTALLER=0`
+branch, plus a rebuild and a boot check. It is recorded here rather than done
+in the documentation pass so the change gets its own test.

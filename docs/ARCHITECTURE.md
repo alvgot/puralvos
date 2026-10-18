@@ -4,22 +4,23 @@ How the two images are built, and the one decision that actually matters.
 
 ## The two images
 
-| | boots to | installs to disk |
-| --- | --- | --- |
-| **PuralvOS** (primary) | full workstation, live | yes |
-| **PuralvOS Live** | full workstation, live | optional |
+| build | boots to | installs to disk | how |
+| --- | --- | --- | --- |
+| **PuralvOS Live** (default) | full workstation, live | no | `tools/build-live.sh` |
+| **PuralvOS** | full workstation, live | yes, stock Ubuntu installer | `PURALVOS_INSTALLER=1 tools/build-live.sh` |
 
-The primary image is the one that ships. It behaves like the Ubuntu Studio ISO
-it is based on: you boot it, the whole workstation is there to try, and there
-is an "Install PuralvOS" entry that writes it to a machine.
+Both are built from the same curated root filesystem. The only difference is
+whether snapd is kept, because the stock installer (`ubuntu-desktop-bootstrap`)
+is a snap.
 
-The live image is the same workstation with the installer removed. It exists
-for evaluation, for demos, and for machines where installing is not wanted.
-Its only real difference is the absence of the installer, which is why it is
-worth building separately rather than shipping one image and hoping.
-
-Both are built from the same curated root filesystem. That is the whole point:
-the thing you try live is byte-for-byte the thing you get installed.
+That is not a cosmetic choice. On the stock image, snapd re-runs install and
+configure hooks for sixteen seeded snaps on the first live boot — Thunderbird
+alone is minutes of hook work — and it is the largest single item in the boot
+budget. [`excludes.list`](../excludes.list) already says "NO SNAP", so the
+default build enforces it: `snapd.service`, `snapd.seeded`, `snapd.socket`, the
+kernel's snap mounts and the installer service are all masked, and the boot
+menu says "try out" rather than offering an install. `PURALVOS_INSTALLER=1`
+keeps them and pays the cost.
 
 ## What the base already gives us
 
@@ -39,7 +40,55 @@ this is being written from scratch:
 Note the live filesystem is layered rather than a single `filesystem.squashfs`:
 that changed in 24.04 and is the first thing to trip up anyone rebuilding it.
 
+## What the boot path costs, and what is masked
+
+The live image is a USB stick and a laptop, so every unit that starts is a
+second somebody watches a splash. The boot budget was measured with
+[`scripts/kvmboottime.sh`](../scripts/kvmboottime.sh), which boots the ISO
+under KVM with the CD throttled to 25 MB/s (a USB stick's real throughput) and
+waits for the marker the live session writes to `/dev/ttyS0` from inside
+Plasma. On 2026-10-18 the same harness measured the image at 68.7 s before
+this work and about 43 s after, kernel start to desktop.
+
+The units that were costing the time, and why masking them is correct rather
+than a workaround:
+
+| unit | cost | why it is not this product |
+| --- | --- | --- |
+| `ldconfig.service` | ~11 s, every boot | rebuilds `/etc/ld.so.cache`, which the archive already ships and this build does not invalidate. The `.updated` stamps do not silence it: its conditions are trigger conditions |
+| `snapd` + seed hooks | ~8 s, first boot (measured; an earlier 20–30 s estimate from a serial log was high) | runs install/configure hooks for 16 snaps; `excludes.list` says NO SNAP |
+| `casper-md5check` | reads 7 GB | verifies the ISO against `md5sum.txt`; a build artifact, not a workstation task |
+| `cloud-init` | ~2 s + a network wait | there is no cloud |
+| ZFS units | module load + udev | nothing here is on ZFS |
+| cups, ModemManager, apport, unattended-upgrades, apt-daily, rsyslog, ufw, smartd, sysstat, anacron | small each | a live media workstation does not print, does not have a modem, and does not need a package refresh at boot |
+
+Masking, not disabling: a unit mask is a symlink to `/dev/null` in
+`/etc/systemd/system`, which beats a `WantedBy` symlink in any lower casper
+layer. See `tools/build-live.sh`, the `boot time` section, for the full list.
+
+Two more costs are paid once per session rather than per unit:
+Plasma builds `ksycoca` and fontconfig's user cache on first login by walking
+every desktop file, service and font on the USB. Both are pre-built into
+`/etc/skel/.cache` at image time. Baloo, the snap user daemon, DisplayCAL's
+profile applier and the session-restore helper are `Hidden=true` in
+`/etc/xdg/autostart`; `Hidden` is the key that means "do not start", where
+`NoDisplay` only keeps an entry out of menus.
+
+The console is silenced from GRUB to the greeter with `loglevel=0`,
+`vt.global_cursor_default=0` and `systemd.show_status=0`, so a Bluetooth probe
+complaint or a red FAILED line for a unit that is allowed to fail does not
+appear in front of the splash. Everything still reaches the journal and
+`dmesg`; `PURALVOS_SELFTEST=1` restores the serial console when it is needed.
+
 ## The decision: how does the installed system get *our* package set
+
+> **Reality check (2026-10-18).** The shipped installable variant does not use
+> ubiquity. Ubuntu Studio 26.04.1's live installer is the
+> `ubuntu-desktop-bootstrap` snap, which is why the Live build disables snapd
+> and loses the installer with it, and why the default boot menu says "try
+> out". `PURALVOS_INSTALLER=1` keeps snapd and boots the stock snap installer
+> unchanged. The preseed analysis below is the plan for how an *installed*
+> system gets the curated package set, not a description of the current ISO.
 
 **Decided: option 1, preseed ubiquity. Use Ubuntu's own tools.** The rule that
 governs the whole build is in [STANDARD-TOOLS.md](STANDARD-TOOLS.md):

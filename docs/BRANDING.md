@@ -34,6 +34,13 @@ wallpaper" is not a task.
 
 ## The one that will bite: `ubiquity-ubuntu-artwork`
 
+> **Note (2026-10-18).** The installer that actually ships on Ubuntu Studio
+> 26.04.1 is the `ubuntu-desktop-bootstrap` snap, not ubiquity, and the default
+> PuralvOS build is the Live image with snapd masked, so it has no installer at
+> all. The `ubiquity-ubuntu-artwork` analysis below is kept because it is the
+> path the installable variant and the installed-system plan use; the snap's
+> own wizard artwork is inside the snap and is not overridden by this build.
+
 This package is not optional in practice. Ubiquity's templates reference it, so
 removing it leaves a broken installer rather than an unbranded one. The
 approach is therefore **override, do not remove**: keep the package so the

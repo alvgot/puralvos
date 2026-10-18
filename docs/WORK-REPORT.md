@@ -320,3 +320,77 @@ Two checks were also repaired so the next failure of this kind reports itself:
 `iso-label` falls back to `/cdrom/.disk/info` when the installed-system file
 is absent, and `grub-menus` names the files it read instead of only saying
 the result was wrong.
+
+---
+
+## 8. Session 2026-10-18: the boot budget, 2 m 15 s to 50 s
+
+The image that booted at the end of the previous session still had three
+defects that looked like one: a login screen that accepted no input, a boot
+that took over two minutes on a ThinkPad T460s, and applications opening by
+themselves. They had different causes.
+
+### The login screen
+
+SDDM was configured but never enabled. `brand_the_tree` wrote
+`/etc/sddm.conf.d/99-puralvos-live.conf` with autologin and the theme, and
+nothing created the `display-manager.service` symlinks, so the graphical
+target had no display manager to start. The live user was also not in
+`/etc/passwd`: casper creates it during boot, and SDDM was running before it
+existed. Both are now explicit in the build: `sddm.service` is enabled through
+`display-manager.service` and `multi-user.target.wants`, and `puralvos` (uid
+1000) is pre-created with a password so autologin and console login both work.
+
+### "All the apps start alone"
+
+This was the self test. It was baked into every kernel command line with
+`puralvos.selftest=1`, and its tier 4 opens every application in the image to
+prove the launcher resolves. That is the right check for an installed system
+and the wrong thing on a live boot: the desktop came up with Audacity,
+Blender, GIMP, Inkscape and KStars opening, and the machine stayed busy for
+minutes. The instrumentation is now opt-in (`PURALVOS_SELFTEST=1`,
+`PURALVOS_DIAG=1`), and a production build boots the stock kernel line.
+
+The other half was the autostart hider, which set `NoDisplay=true`.
+`NoDisplay` only keeps an entry out of menus; `Hidden=true` is the XDG key
+that means "do not start". Every "hidden" application had been starting at
+login anyway. It now writes both, with `Hidden` doing the work.
+
+### The boot budget
+
+Measured, not estimated. `scripts/kvmboottime.sh` throttles the ISO to
+25 MB/s and waits for a marker written from inside Plasma. Same harness before
+and after: **68.7 s → 43–44 s** kernel-start to desktop; the laptop went from
+2 m 15 s to about 50 s.
+
+| cost | found | fix |
+| --- | --- | --- |
+| `ldconfig.service` | 15 s on every boot, visible in the serial log as a job counter running 5 s → 17 s | masked. The `.updated` stamps did not stop it (trigger conditions); the shipped cache is correct and the build installs no userspace library |
+| snapd seeding | re-ran install/configure hooks for 16 snaps (Thunderbird alone is minutes). The controlled measurement is ~8 s of boot; an earlier read of the serial log put it at 20–30 s because it measured elapsed time rather than the unit | masked in the Live build, which is what `excludes.list` says anyway |
+| `casper-md5check` | read the whole 7 GB ISO while the desktop was loading | masked |
+| cloud-init, ZFS, cups, ModemManager, apport, apt-daily timers, rsyslog, ufw, smartd, sysstat, anacron | small each, several of them allowed to fail and printing red lines | masked |
+| Plasma's first login | rebuilt `ksycoca` by walking every desktop file, service and plugin, and fontconfig's user cache by walking every font, on the USB | pre-built into `/etc/skel/.cache` at image time |
+| Baloo, snap userd, DisplayCAL profile apply, session restore | start at login for no product reason | `Hidden=true` |
+| GRUB and kernel | 5 s menu, speculative-execution mitigations, watchdog | `timeout=1`, `mitigations=off nowatchdog`; `loglevel=0` and `systemd.show_status=0` keep the console clean to the greeter |
+
+The early console now stays silent, which also hides the Bluetooth probe
+complaint the laptop printed before the splash. Bluetooth is still enabled and
+gets `rfkill unblock bluetooth` before start, so a hardware-blocked radio
+stops failing the unit.
+
+### The two images are now real
+
+`PURALVOS_INSTALLER=1` builds the installable variant with snapd kept; the
+default is the Live image, and its boot menu says "try out" instead of
+offering an install it cannot perform. Same filesystem, same branding, one
+build flag. The installable variant has not been booted since the split and is
+the next thing to test.
+
+### What is still true
+
+- **USB 2.0 is the floor.** 6.8 GB cannot read faster than the bus. The T460s
+  has USB 3.0 ports; a USB 3.0 stick in one of them is the low-40s.
+- **Real-hardware audio is still unverified.** Every real-time claim is a
+  configuration claim on a machine with no sound card.
+- The docs now describe the measured state; the licence and the non-free
+  manifest tool are still the first two items in the README's "not yet done".

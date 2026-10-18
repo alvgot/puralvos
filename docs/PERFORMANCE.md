@@ -68,7 +68,8 @@ Measured on the installed system, not the live session. Numbers, not adjectives.
 | JACK buffer, no xruns | 128 frames (2.67 ms @ 48 kHz) | same run |
 | Kernel | `PREEMPT_RT` | `uname -v`, must contain the RT flag |
 | RT priority granted | yes | `su - $USER -c 'ulimit -r'`, and `chrt -p $$` inside an audio app |
-| Boot to desktop | < 8 s | `systemd-analyze`, NVMe, warm |
+| Boot to desktop, installed | < 8 s | `systemd-analyze`, NVMe, warm |
+| Boot to desktop, live USB | < 60 s | `scripts/kvmboottime.sh`, throttled to 25 MB/s, plus a real laptop |
 | Login to usable | < 3 s | manual |
 | Idle RAM | < 900 MB | `free -m` at idle, no apps |
 | Install ISO size | < 3 GB | the saving from stripping is a number, not a feeling |
@@ -77,6 +78,70 @@ Measured on the installed system, not the live session. Numbers, not adjectives.
 **The xruns target is the one that matters.** Everything else is a convenience.
 An audio workstation that drops out under load is not a workstation, and boot
 time is not what anyone is thinking about when they are mixing.
+
+## Live boot, measured
+
+The 8-second target above is the installed system on NVMe with a warm page
+cache. The live image is a different budget: a 7 GB ISO read from a USB stick,
+with the desktop's own files competing for the bus. It used to be 2 m 15 s on
+a ThinkPad T460s. It is now about 50 s, and 43–44 s from kernel start to a usable
+Plasma session under KVM.
+
+The measurement is `scripts/kvmboottime.sh`. It boots the ISO with the CD
+throttled to a chosen throughput (25 MB/s is what a USB stick actually gives),
+and waits for the line the live session writes from inside Plasma:
+
+```
+PURALVOS_DESKTOP_READY <kernel uptime>
+```
+
+That marker is `/usr/local/bin/puralvos-bootmark`, run from
+`/etc/xdg/autostart` after the panel is up, so the number means "desktop
+usable", not "greeter started". No serial console is needed on the target
+machine; the script only writes to `ttyS0` when one exists.
+
+Measured on 2026-10-18, KVM, 2 vCPU, `cache=none`:
+
+| ISO | throttle | wall (QEMU → desktop) | guest (kernel → desktop) |
+| --- | ---: | ---: | ---: |
+| before this work | 25 MB/s | 79 s | 68.7 s |
+| after | 25 MB/s | 52–53 s | 43.3–44.2 s (run-to-run) |
+| after | 100 MB/s | 52 s | 43.1 s |
+
+The 100 MB/s row is the same within run-to-run noise, because the boot is no
+longer I/O-bound above about 25 MB/s. A 5 MB/s run took 190 s, which is the
+bandwidth curve behaving as expected.
+
+The 25 seconds, as a controlled series — each ISO differs from the previous
+one by a single change, measured with the same harness:
+
+| build | guest, kernel → desktop | change | delta |
+| --- | ---: | --- | ---: |
+| 1740 | 68.7 s | baseline (md5check, ZFS and cloud-init already masked; ksycoca pre-built) | — |
+| 1757 | 60.3 s | snapd, its socket, seed and the snap mounts masked | −8.4 s |
+| 1805 | 49.0 s | `ldconfig.service` masked | −11.3 s |
+| 1813 | 43.3 s | fontconfig user cache pre-built; session restore hidden | −5.7 s |
+
+The steps before 1740 are outside that series because the 1740 baseline was
+taken after them. On the laptop they are part of the 2 m 15 s → ~50 s story:
+the always-on self test opening every application at boot (removed, now
+opt-in), `casper-md5check` reading the whole ISO, the ZFS units, cloud-init,
+and a 5-second GRUB menu.
+
+The first estimate for snapd was 20–30 s, read off a serial log where it sat
+between sysinit and multi-user. The controlled measurement is 8 s; the serial
+log was measuring elapsed time, not the unit's own cost, and the earlier
+number should not be repeated.
+
+Two consequences worth stating:
+
+- **The target machine needs USB 3.0 to see the best number.** A 6.8 GB image
+  cannot read faster than the bus. On USB 2.0 the residual is bandwidth; on a
+  USB 3.0 stick in a USB 3.0 port (the T460s has three) the same image boots
+  in the low-40s.
+- **A full boot-time budget is now checkable in CI.** `kvmboottime.sh` exits
+  non-zero if the marker does not appear inside the cap, so a unit that
+  quietly regresses the boot fails a run instead of being felt.
 
 ## Why the kernel on the ISO is not enough
 
@@ -218,6 +283,7 @@ stops.
 
 ## Not yet done
 
-- [ ] boot-time baseline measured on the base, so stripping has something to beat
+- [x] boot-time baseline measured, with `scripts/kvmboottime.sh`
+- [ ] boot-time budget enforced in CI (the script exits non-zero; nothing runs it yet)
 - [ ] `puralvos-xrun-bench`, the tool that actually measures xruns on real hardware
 - [ ] the branding checks turned on for real, once the image exists to check

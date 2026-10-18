@@ -40,6 +40,16 @@
 #                 an existing $WORK/iso tree. The tree has to have been built
 #                 by an earlier run of this script; it is not unpacked or
 #                 modified in the layers, only repacked and written out.
+#
+# Environment:
+#   PURALVOS_INSTALLER=1  build the INSTALLABLE variant. Default is the Live
+#                         image: snapd and the snap installer are masked,
+#                         which is worth about 8 s of first boot (measured).
+#   PURALVOS_SELFTEST=1   add console=ttyS0,115200n8 and puralvos.selftest=1
+#                         to every menu entry (verification builds only).
+#   PURALVOS_DIAG=1       the same, with puralvos.diag=1 for the diag unit.
+#   PURALVOS_WORK=DIR     build under DIR (needs ~45 GB free).
+#   PURALVOS_OUT=DIR      write the ISO to DIR (default: repo out/).
 
 set -euo pipefail
 
@@ -507,8 +517,16 @@ if [ -f "$G" ]; then
 	#     error: can't find command `grub_platform'
 	# across the top of the menu before anything else goes wrong. The line is
 	# not ours and carries no information, so it does not survive the rebrand.
+	# The menu says what this build can do. A Live build has no installer,
+	# so it must not offer one; the strings are still the stock ones at this
+	# point, which is why the substitution is anchored on them.
+	if [ "${PURALVOS_INSTALLER:-0}" = "1" ]; then
+		MENU_NAME='PuralvOS Live — install or try out'
+	else
+		MENU_NAME='PuralvOS Live — try out'
+	fi
 	sed -i \
-	  -e 's/Try or Install Ubuntu Studio/PuralvOS Live — install or try out/' \
+	  -e "s/Try or Install Ubuntu Studio/$MENU_NAME/" \
 	  -e 's/Ubuntu Studio (safe graphics)/PuralvOS Live (safe graphics)/' \
 	  -e 's/^set timeout=.*/set timeout=1/' \
 	  -e '/^grub_platform$/d' \
@@ -1549,21 +1567,19 @@ mask_unit apt-daily.timer apt-daily-upgrade.timer anacron.timer \
 # NO SNAP, for real. The seed is 16 snaps and snapd re-runs their install and
 # configure hooks on every live boot (thunderbird alone is minutes of hook
 # work), which is both the largest remaining boot cost and a direct violation
-# of excludes.list. This is the LIVE image: masking snapd removes the snap
-# installer with it, which is the documented difference between PuralvOS and
-# PuralvOS Live. The installable build keeps snapd.
+# of excludes.list.
+#
+# This is the LIVE image, so snapd is masked by default and the snap-based
+# installer goes with it. PURALVOS_INSTALLER=1 builds the installable variant
+# instead: same filesystem and same branding, snapd kept, first boot slower by
+# the seeding cost.
+if [ "${PURALVOS_INSTALLER:-0}" = "1" ]; then
+	echo "  snap: kept (installable build; first boot pays the snap seeding cost)"
+else
 mask_unit snapd.service snapd.socket snapd.seeded.service snapd.apparmor.service \
 	snapd.autoimport.service snapd.core-fixup.service \
 	snapd.recovery-chooser-trigger.service snapd.hold.service \
 	snapd.mounts.target snap.ubuntu-desktop-bootstrap.subiquity-server.service
-# Bluetooth stays available, but it should not fail because the radio is
-# rfkill-blocked (common on ThinkPads with the hardware switch off), which
-# produced the red line this image showed before the splash.
-install -d "$FULL/etc/systemd/system/bluetooth.service.d"
-cat > "$FULL/etc/systemd/system/bluetooth.service.d/unblock.conf" <<'EOF'
-[Service]
-ExecStartPre=-/usr/sbin/rfkill unblock bluetooth
-EOF
 for m in "$FULL"/etc/systemd/system/snap-*.mount "$FULL"/etc/systemd/system/multi-user.target.wants/snap-*.mount; do
 	[ -e "$m" ] || continue
 	ln -sfn /dev/null "$FULL/etc/systemd/system/$(basename "$m")"
@@ -1574,7 +1590,16 @@ rm -f "$FULL"/etc/systemd/system/multi-user.target.wants/snapd.seeded.service \
       "$FULL"/etc/systemd/system/multi-user.target.wants/snapd.autoimport.service \
       "$FULL"/etc/systemd/system/multi-user.target.wants/snapd.core-fixup.service \
       "$FULL"/etc/systemd/system/multi-user.target.wants/snapd.recovery-chooser-trigger.service
-echo "  snap: masked (this is the live image; the installable build keeps snapd)"
+echo "  snap: masked (Live build; PURALVOS_INSTALLER=1 keeps snapd and the installer)"
+fi
+# Bluetooth stays available, but it should not fail because the radio is
+# rfkill-blocked (common on ThinkPads with the hardware switch off), which
+# produced the red line this image showed before the splash.
+install -d "$FULL/etc/systemd/system/bluetooth.service.d"
+cat > "$FULL/etc/systemd/system/bluetooth.service.d/unblock.conf" <<'EOF'
+[Service]
+ExecStartPre=-/usr/sbin/rfkill unblock bluetooth
+EOF
 echo "  masked $(find "$FULL/etc/systemd/system" -maxdepth 1 -type l -lname /dev/null 2>/dev/null | wc -l) services; display manager no longer waits for snapd"
 
 # --------------------------------------------------------------------------

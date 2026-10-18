@@ -25,7 +25,8 @@ stated minimum.
   `scripts/qmp-key.py <run-dir> ret`** to get past it, or the run looks like a
   hang when it is only a menu.
 - Boots to a Plasma desktop.
-- The ubiquity installer launches inside the live session automatically.
+- The stock installer (`ubuntu-desktop-bootstrap`, a snap) launches inside
+  the live session automatically.
 
 There is **no serial console output**. The ISO does not mirror to `ttyS0`, so
 the serial log stays empty on a perfectly healthy boot. Do not read that as

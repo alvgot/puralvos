@@ -103,7 +103,12 @@ rootfs rather than assumed.
 
 `bare`, `core24`, `desktop-security-center`, `firefox`, `firmware-updater`, `freeshow`, `gnome-46-2404`, `gtk-common-themes`, `gtk-theme-orchis`, `icon-theme-breeze`, `mesa-2404`, `prompting-client`, `snapd`, `snapd-desktop-integration`, `thunderbird`, `ubuntu-desktop-bootstrap`
 
-PuralvOS ships none of these. See `excludes.list`.
+PuralvOS ships none of these *as running software*. The payloads are still in
+the stock base layers (removing them would mean repacking Ubuntu Studio's own
+squashfs), but the Live build masks `snapd`, its socket and every snap mount,
+so nothing in this list starts, and the boot menu offers no installer that
+needs them. See `excludes.list` and the boot section of
+[ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Removal candidates
 
