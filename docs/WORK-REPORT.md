@@ -394,3 +394,44 @@ the next thing to test.
   configuration claim on a machine with no sound card.
 - The docs now describe the measured state; the licence and the non-free
   manifest tool are still the first two items in the README's "not yet done".
+
+---
+
+## 7. The 26.10 rebase (2026-10-19)
+
+The base moved to Ubuntu Studio 26.10 "Stonking Stingray" and everything was
+rebuilt with the same package lists. What the rebase forced:
+
+- Seven renames in the trim lists, all upstream: kernel tools 7.0.0-30 →
+  7.3.0-9, `libgdal38` → `libgdal39`, `libhdf5-310` → `libhdf5-320` (+ HL),
+  `libonnx1t64` → `libonnx1l`, `libopenexr-3-1-30` → `libopenexr-3-4-33`.
+  Two drops: `fcitx-googlepinyin` and `fcitx-module-cloudpinyin`, the fcitx4
+  language engines that 26.10 no longer ships.
+- The kernel is 7.3.0-9: the build keeps `linux-image-7.3.0-9-realtime` and
+  removes the generic kernel (175 MB of modules).
+- ubiquity moved from `pool/main` to `pool/universe` (26.10.2, no
+  `ubiquity-casper`), but the live installer is still the
+  `ubuntu-desktop-bootstrap` snap, so the snapd-masked Live build behaves as
+  before.
+- Verification build 0927: full self test from the serial console — 125 pass,
+  19 fail. The failures are the 26.04-era baseline set plus menu entries the
+  26.04 sweep never reached (JACK not running in the VM, VM graphics); the
+  desktop is up in 19.55 s and the tier3 branding checks are clean.
+- Production build 1018: `out/puralvos-live-20261019-1018.iso`, sha256
+  `f35c77d14a03a9d728bc9bbbd4e3ae97b0918311e74dd439f1376c0e64e3d8a4`, boots
+  to the branded Plasma desktop with the installer masked. The `dbus-broker`
+  self test fix is baked in (the 0927 build predates it — its one false
+  failure was `dbus-daemon-running`, now accepted as either daemon).
+- Audio-only, actually: the two remaining non-audio task bundles
+  (`ubuntustudio-video`, `ubuntustudio-graphics`) survived the first build as
+  empty shells because only photography and publishing were purged. All four
+  are now purged explicitly. The purge orphans QLC+ and its lighting chain and
+  the Wacom X driver, and would have taken `xserver-xorg-core` too — measured,
+  then prevented by marking it manual with the audio anchors.
+- Audio-only production build 1045: `out/puralvos-live-20261019-1045.iso`,
+  sha256 `555c904d367d5f261e78b0e3f0e4906bdf72c023408a89cb06ecce8756096dda`,
+  892 packages removed by the trim (the bundle purge reorders the batches:
+  478 in 01), 2552 installed, boots to the branded Plasma desktop with the
+  audio stack intact.
+- The family is four images from this harness: audio, graphics, video and the
+  full merged one; this branch builds the audio ISO.

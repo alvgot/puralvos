@@ -5,8 +5,8 @@
 
 SHELL := /bin/bash
 BASE_DIR := base
-BASE_ISO := $(BASE_DIR)/ubuntustudio-26.04.1-desktop-amd64.iso
-BASE_URL := https://cdimage.ubuntu.com/ubuntustudio/releases/resolute/release/ubuntustudio-26.04.1-desktop-amd64.iso
+BASE_ISO := $(BASE_DIR)/ubuntustudio-26.10-desktop-amd64.iso
+BASE_URL := https://cdimage.ubuntu.com/ubuntustudio/releases/stonking/release/ubuntustudio-26.10-desktop-amd64.iso
 SCRIPTS  := scripts
 TOOLS   := tools
 

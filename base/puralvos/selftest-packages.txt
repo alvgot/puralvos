@@ -14,8 +14,6 @@
 #         a build failure.
 
 ubuntustudio-audio=meta
-ubuntustudio-video=meta
-ubuntustudio-graphics=meta
 ubuntustudio-lowlatency-settings=pkg
 ubuntustudio-performance-tweaks=pkg
 ubuntustudio-default-settings=pkg

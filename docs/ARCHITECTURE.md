@@ -24,18 +24,21 @@ keeps them and pays the cost.
 
 ## What the base already gives us
 
-Ubuntu Studio 26.04.1 ships the installer and the live machinery, so none of
+Ubuntu Studio 26.10 ships the installer and the live machinery, so none of
 this is being written from scratch:
 
 ```
-/pool/main/u/ubiquity/ubiquity_26.04.1_amd64.deb
-/pool/main/u/ubiquity/ubiquity-casper_26.04.2_all.deb
-/pool/main/u/ubiquity/ubiquity-frontend-gtk_26.04.1_amd64.deb
-/pool/main/u/ubiquity/ubiquity-frontend-debconf_26.04.1_amd64.deb
+/pool/universe/u/ubiquity/ubiquity_26.10.2_amd64.deb
+/pool/universe/u/ubiquity/ubiquity-frontend-gtk_26.10.2_amd64.deb
+/pool/universe/u/ubiquity/ubiquity-frontend-debconf_26.10.2_amd64.deb
+/pool/universe/u/ubiquity/ubiquity-ubuntu-artwork_26.10.2_all.deb
 /casper/minimal.squashfs
 /casper/minimal.standard.squashfs
 /casper/minimal.standard.live.squashfs
 ```
+
+(26.10 moved the ubiquity pool from `main` to `universe` and dropped
+`ubiquity-casper`; the oem-config packages are still in the same pool.)
 
 Note the live filesystem is layered rather than a single `filesystem.squashfs`:
 that changed in 24.04 and is the first thing to trip up anyone rebuilding it.
@@ -82,13 +85,14 @@ appear in front of the splash. Everything still reaches the journal and
 
 ## The decision: how does the installed system get *our* package set
 
-> **Reality check (2026-10-18).** The shipped installable variant does not use
-> ubiquity. Ubuntu Studio 26.04.1's live installer is the
-> `ubuntu-desktop-bootstrap` snap, which is why the Live build disables snapd
-> and loses the installer with it, and why the default boot menu says "try
-> out". `PURALVOS_INSTALLER=1` keeps snapd and boots the stock snap installer
-> unchanged. The preseed analysis below is the plan for how an *installed*
-> system gets the curated package set, not a description of the current ISO.
+> **Reality check (2026-10-19).** The shipped installable variant does not use
+> ubiquity. Ubuntu Studio 26.10's live installer is the
+> `ubuntu-desktop-bootstrap` snap (revision 705), which is why the Live build
+> disables snapd and loses the installer with it, and why the default boot menu
+> says "try out". `PURALVOS_INSTALLER=1` keeps snapd and boots the stock snap
+> installer unchanged. The preseed analysis below is the plan for how an
+> *installed* system gets the curated package set, not a description of the
+> current ISO.
 
 **Decided: option 1, preseed ubiquity. Use Ubuntu's own tools.** The rule that
 governs the whole build is in [STANDARD-TOOLS.md](STANDARD-TOOLS.md):
@@ -105,7 +109,7 @@ reimplementation of something Ubuntu already ships.
 ### What "the standard tools" turns out to be, exactly
 
 Checked against the real packages rather than assumed. `ubuntustudio-installer`
-2.0.7 (resolute) is a **GUI**. It takes package names as arguments, shows a
+2.2.5 (stonking) is a **GUI**. It takes package names as arguments, shows a
 GTK or Qt checklist, and has no command line flags and no preseed hook of its
 own — verified, not assumed.
 

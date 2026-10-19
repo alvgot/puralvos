@@ -1,4 +1,4 @@
-# Baseline: stock Ubuntu Studio 26.04.1
+# Baseline: stock Ubuntu Studio 26.10
 
 What the unmodified base actually is, measured rather than assumed.
 
@@ -10,38 +10,41 @@ breaks something, this is what says whether the base broke it or we did.
 
 | | |
 | --- | --- |
-| Image | `ubuntustudio-26.04.1-desktop-amd64.iso` |
-| Size | 6.6 GB |
-| sha256 | `2b25d06203c8a2f60da23e20e3afd1fa400f8ff8104fd074c1b7e49fc3768084` |
+| Image | `ubuntustudio-26.10-desktop-amd64.iso` |
+| Size | 6.4 GB |
+| sha256 | `00d1fb881501101b9f7e9fe5b22c5473f6c96fa4bb2b69f9c00e9ee69f537fe7` |
 | Verified | matches Canonical's published checksum |
-| Support | until April 2029 |
+| Support | until July 2027 (interim release) |
 
 ## It boots
 
 Booted under KVM (`scripts/kvmtest.sh`), on a 4 GB VM, which is Ubuntu Studio's
 stated minimum.
 
-- GRUB waits at its menu for a keypress. **An unattended boot needs
-  `scripts/qmp-key.py <run-dir> ret`** to get past it, or the run looks like a
-  hang when it is only a menu.
+- GRUB shows a text menu (`Try or Install Ubuntu Studio`, safe graphics, ...)
+  and **boots the default entry by itself after a 13-second countdown** — no
+  keypress is needed. `scripts/qmp-key.py <run-dir> ret` picks the entry
+  immediately when a run should not wait. (PuralvOS's own ISO sets
+  `timeout=1` and boots without any key at all.)
 - Boots to a Plasma desktop.
 - The stock installer (`ubuntu-desktop-bootstrap`, a snap) launches inside
   the live session automatically.
 
-There is **no serial console output**. The ISO does not mirror to `ttyS0`, so
-the serial log stays empty on a perfectly healthy boot. Do not read that as
+Serial carries **no kernel or live-session output**: the ISO does not mirror to
+`ttyS0`, so the serial log holds only the UEFI firmware chatter and GRUB's
+text-mode rendering, nothing from the kernel. Do not read the firmware bytes as
 failure, and do not spend time hunting a kernel panic that was never printed.
 Use `scripts/qmp-key.py` plus QMP screenshots to see the screen instead.
 
 ## What is in it
 
-**3362 packages** in the live layer (`casper/minimal.standard.live.squashfs`).
+**3410 packages** in the live layer (`casper/minimal.standard.live.squashfs`).
 
 ### The kernel is the generic one
 
 ```
-linux-generic            7.0.0-14.14
-linux-image-generic       7.0.0-14.14
+linux-generic            7.3.0-9.9
+linux-image-generic      7.3.0-9.9
 linux-headers-generic
 ```
 
@@ -55,7 +58,7 @@ build time, not just the installed one.
 
 ### Firmware: what the non-free decision actually buys
 
-18 `linux-firmware-*` packages, including:
+19 `linux-firmware` packages (18 subpackages plus the base), including:
 
 ```
 linux-firmware-intel-wireless      ← the Intel 8260 firmware
@@ -68,7 +71,7 @@ linux-firmware-qualcomm-wireless
 ```
 
 This is the entire point of PuralvOS shipping proprietary software, and it shows
-up immediately. Eighteen firmware packages are carried, and one of them,
+up immediately. Nineteen firmware packages are carried, and one of them,
 `linux-firmware-intel-wireless`, is exactly the firmware a specific laptop's
 Intel 8260 wireless adapter needs in order to have a working network at all.
 
@@ -84,22 +87,27 @@ ubuntustudio-desktop-core
 ubuntustudio-audio                ← keep
 ubuntustudio-audio-core
 ubuntustudio-audio-plugins
-ubuntustudio-video                ← keep
-ubuntustudio-graphics             ← keep
-ubuntustudio-photography          ← remove
+ubuntustudio-video                ← remove, audio-only
+ubuntustudio-graphics             ← remove, audio-only
+ubuntustudio-photography          ← remove, audio-only
+ubuntustudio-publishing           ← remove, audio-only
 ubuntustudio-pipewire-config
 ubuntustudio-lowlatency-settings
 ubuntustudio-performance-tweaks
 ubuntustudio-default-settings
 ubuntustudio-installer            ← the task selector, keep
 ubuntustudio-menu
-ubuntustudio-wallpapers(-resolute)
+ubuntustudio-wallpapers(-stonking)
 ubuntustudio-fonts / -icon-theme / -look
 ```
 
-`ubuntustudio-desktop` is present and pulls the general-purpose desktop with it.
-`ubuntustudio-photography` is present and is not wanted. These are the two
-metapackages the strip-down has to deal with; see `excludes.list`.
+`ubuntustudio-desktop` is present and pulls the general-purpose desktop with it;
+the four non-audio task bundles (`-video`, `-graphics`, `-photography`,
+`-publishing`) are present and are not wanted. The umbrella is kept out via
+`excludes.list` and the bundles are purged at build time (`purge_in_chroot` in
+`tools/build-live.sh`) — with them go their orphaned chains (QLC+ and the
+lighting stack, the Wacom X driver) while `xserver-xorg-core` is deliberately
+marked manual so the sweep cannot take the X server with them.
 
 ## The step that is not a package
 

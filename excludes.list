@@ -26,30 +26,27 @@
 # the lowlatency kernel only as a recommendation.
 
 linux-generic
-linux-generic-hwe-26.04
-linux-generic-hwe-26.04-edge
+linux-generic-hwe-26.10
+linux-generic-hwe-26.10-edge
 linux-image-generic
-linux-image-generic-hwe-26.04
-linux-image-generic-hwe-26.04-edge
+linux-image-generic-hwe-26.10
+linux-image-generic-hwe-26.10-edge
 linux-headers-generic
-linux-headers-generic-hwe-26.04
-linux-headers-generic-hwe-26.04-edge
+linux-headers-generic-hwe-26.10
+linux-headers-generic-hwe-26.10-edge
 
 # --- general purpose desktop ----------------------------------------------
   #
-  # LibreOffice STAYS. It was on this list and it was wrong: the reason given
-  # was "a document suite is not an audio or video tool", which is a statement
-  # about taste, not about whether the two people who use this machine need it.
-  # Alv and Puria write things. A workstation that cannot open a .odt or a
-  # .docx is a workstation with a papercut in it every single day.
+  # LibreOffice is REMOVED. This section used to say the opposite, on the
+  # argument that both people who use this machine write things and a
+  # workstation that cannot open a .odt or a .docx has a papercut in it every
+  # day. That argument was reasonable and it lost anyway: the audio-only
+  # image does not ship LibreOffice. The reversal is recorded, not silently
+  # edited, so that the next person can tell a reconsidered decision from one
+  # that was never made.
   #
-  # Recorded because the next person to read this file will assume every
-  # general purpose package here is excluded, and will "helpfully" add it back
-  # or take it out. Neither. It is present, on purpose.
-  #
-  # Note what this means for the size argument: 21 packages of LibreOffice is
-  # not a problem worth solving. Snap was 4 GB. The trim is not about making
-  # the image small, it is about removing what is actively in the way.
+  # The exact vetted package set is batch 04-libreoffice.list in
+  # tools/audio-trim, applied by tools/build-live.sh.
 
 # --- packaging and app distribution ---------------------------------------
   #
@@ -159,3 +156,52 @@ puredata
 puredata-data
 puredata-doc
 puredata-utils
+
+# --- the audio-only trim ---------------------------------------------------
+#
+# The stock image leaks in a general-purpose desktop; tools/audio-trim holds
+# the twelve vetted lists that take it back out. Each list was simulated and
+# then really purged in a reconstructed working copy, in order, with the
+# anchors checked after every batch. build-live.sh applies them with
+# --auto-remove and a closing autoremove --purge.
+#
+# The lists are the execution record, batch by batch, with what each removed
+# in the build log; this file keeps the decisions that are NOT obvious from a
+# package name:
+#
+#   * libsnapd-glib-2-1 was a candidate and is NOT removed: purging it
+#     simulates to a REMOVED list containing libspa-0.2-modules, which is
+#     libpipewire's plugin layer. libsnapd-qt-2-1 is gone, this one stays.
+#
+#   * evolution-data-server-common was a candidate and is NOT removed:
+#     purging it takes bluez-obexd and then bluedevil, and Bluetooth audio
+#     gear must keep working out of the box.
+#
+#   * A GPU batch (libplacebo360, libshaderc1) was vetted and DROPPED:
+#     libplacebo360 is a hard dependency of ffmpeg, and the purge answered
+#     with ffmpeg, obs-studio, the ubuntustudio branding packages and the
+#     desktop in the REMOVED list. libshaderc1 still goes, as collateral of
+#     batch 11-geo (its only user there, blender, is in that batch).
+#
+#   * xjadeo and harvid are NOT removed: ardour-video-timeline depends on
+#     xjadeo, and xjadeo's video output goes through harvid. The video
+#     timeline is part of Ardour, so the pair stays.
+#
+#   * gdb, gcc-15-base, gcc-16-base and the cpp chain (cpp, cpp-15,
+#     cpp-15-x86-64-linux-gnu, cpp-x86-64-linux-gnu) are NOT removed:
+#     plasma-workspace reaches cpp through x11-xserver-utils, and gcc-16-base
+#     is pinned by libgcc-s1. Purging them simulates to a REMOVED list with
+#     the desktop in it.
+#
+#   * libpoppler-qt5-1t64 and libpoppler156 are NOT removed: musescore3
+#     depends on them, and musescore3 is a Recommends of ubuntustudio-audio.
+#     The rest of the stack (the qt6 side, poppler-data, poppler-utils and
+#     the ghostscript chain) goes in batch 05.
+#
+# What the trim costs is real and recorded rather than hidden: blender,
+# dolphin, krita, csound-plugins, kio-extras, tzdata-legacy, squashfs-tools,
+# cdparanoia and the ubuntustudio-desktop(-core) metapackages go as
+# collateral of a list or of --auto-remove. None of these is an anchor, and
+# the anchor set was verified after every batch. If one of them is wanted
+# back, it comes back by adding it to tasks.list, not by puncturing a batch
+# here.

@@ -19,7 +19,7 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MANIFEST="${1:-$HERE/build/curated-packages.txt}"
-REPO="${PURALVOS_REPO:-resolute}"
+REPO="${PURALVOS_REPO:-stonking}"
 
 if [ ! -r "$MANIFEST" ]; then
     echo "curated package manifest not found: $MANIFEST" >&2

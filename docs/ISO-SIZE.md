@@ -5,16 +5,34 @@ Ubuntu Studio ISO it is built from?* The short answer is that most of the
 first growth was build residue rather than the product, and removing it made
 the 0843 build smaller than stock.
 
-**The current build is bigger again, and this file says why rather than
-pretending otherwise.** The 2026-10-18 20:45 Live image is 7 348 336 640 bytes,
-221 MB *above* stock. It carries the realtime kernel's modules, TONE3000 in
+**On 26.04 the current build was bigger again, and this file says why rather
+than pretending otherwise.** The 2026-10-18 20:45 Live image is 7 348 336 640
+bytes, 221 MB *above* stock. It carries the realtime kernel's modules, TONE3000 in
 four plugin formats, and — the item still to remove — a 120 MB installer snap
 that the Live build masks and therefore never uses. See
 [the current build](#the-current-build-2026-10-18) below. Everything above
 that section describes the 0843 build and is kept as the record of the
 residue work.
 
-All figures below are the files on disk, in bytes, measured on 2026-10-18.
+## 26.10 rebase (2026-10-19)
+
+The rebase onto Ubuntu Studio 26.10 "Stonking Stingray" barely moves the
+numbers:
+
+| image | bytes | GiB |
+| --- | ---: | ---: |
+| Ubuntu Studio 26.10 stock | 6 905 530 368 | 6.43 |
+| PuralvOS 26.10 Audio, production (1045) | 6 998 128 640 | 6.52 |
+
+Production sha256: `555c904d367d5f261e78b0e3f0e4906bdf72c023408a89cb06ecce8756096dda`.
+
+26.10 stock is **221 665 280 bytes (211 MiB) smaller** than 26.04.1 stock, and
+with the same trim set the production image sits **92 598 272 bytes (88 MiB)
+above 26.10 stock**. The reason is unchanged from the analysis below: the live
+layer plus the real time kernel's modules. The sections that follow document
+the 26.04 builds and stay as the record of that work.
+
+All the 26.04 figures below are the files on disk, in bytes, measured on 2026-10-18.
 
 | image | bytes | GiB |
 | --- | ---: | ---: |

@@ -1,0 +1,69 @@
+# Audio-only trim, batch 01 of 12: input methods, printing, the snap store, and other stock-desktop leaks.
+#
+# Vetted list. tools/build-live.sh applies these files in numeric order with:
+#
+#     apt-get purge -y --auto-remove <the names below>
+#
+# The order is part of the verification: this working copy was purged with
+# these batches in this order, and the audio anchors were checked after
+# every batch. Do not merge or reorder the files.
+#
+# 26.10 rebase: fcitx-googlepinyin and fcitx-module-cloudpinyin no longer
+# exist upstream (fcitx4 sunset) and were dropped. Nothing else changed.
+
+fcitx
+fcitx-bin
+fcitx-data
+fcitx-frontend-all
+fcitx-frontend-fbterm
+fcitx-frontend-gtk2
+fcitx-frontend-gtk3
+fcitx-frontend-qt5
+fcitx-frontend-qt6
+fcitx-module-dbus
+fcitx-module-kimpanel
+fcitx-module-lua
+fcitx-module-quickphrase-editor5
+fcitx-module-x11
+fcitx-modules
+fcitx-pinyin
+fcitx-table
+fcitx-table-wubi
+fcitx-ui-classic
+bluez-cups
+cups
+cups-browsed
+cups-bsd
+cups-client
+cups-common
+cups-core-drivers
+cups-daemon
+cups-filters
+cups-filters-core-drivers
+cups-ipp-utils
+cups-pk-helper
+cups-ppdc
+cups-server-common
+hplip
+hplip-data
+printer-driver-brlaser
+printer-driver-c2esp
+printer-driver-foo2zjs
+printer-driver-foo2zjs-common
+printer-driver-m2300w
+printer-driver-min12xxw
+printer-driver-pnm2ppa
+printer-driver-ptouch
+printer-driver-pxljr
+printer-driver-sag-gdi
+printer-driver-splix
+libsnapd-qt-2-1
+plasma-discover-backend-snap
+snapd
+synaptic
+darktable
+fonts-noto-cjk
+ppp
+usb-modeswitch
+usb-modeswitch-data
+firefox

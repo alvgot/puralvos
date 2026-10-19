@@ -1,8 +1,8 @@
-# PuralvOS task set
+# PuralvOS Audio-Only task set
 #
-# What PuralvOS installs, and nothing else.
+# What PuralvOS Audio installs, and nothing else.
 #
-# This list is not invented. It is the Ubuntu Studio Installer's own task table,
+# This list is derived from the Ubuntu Studio Installer's own task table,
 # taken from backend.py in ubuntustudio-installer 2.0.7 (resolute):
 #
 #     METAPACKAGES = (
@@ -18,18 +18,13 @@
 #         "ubuntu-edu-music",
 #     )
 #
-# PuralvOS is that list minus photography and publishing. Everything else is
-# carried over unchanged, because the upstream tasks are curated by people who
-# know which combination of applications actually cooperates with PipeWire,
-# which plugins build, and which plugin hosts need which libraries.
+# PuralvOS Audio-Only is that list minus everything except audio.
 #
-# Resolved against Ubuntu 26.04.1 LTS (resolute), ubuntustudio-* 26.04.20.
+# Resolved against Ubuntu 26.10 (stonking).
 
-# --- the three tasks that define the product -------------------------------
+# --- the one task that defines the product -------------------------------
 
 ubuntustudio-audio
-ubuntustudio-video
-ubuntustudio-graphics
 
 # --- real time performance ------------------------------------------------
 #
@@ -50,8 +45,8 @@ ubuntustudio-pipewire-config
 # twice over: PPAs need apt pinning to work at all, and they are the usual way
 # a system ends up holding a kernel nobody will ever patch.
 #
-# linux-realtime, NOT linux-lowlatency. On Ubuntu 26.04 these are not what the
-# names suggest, and picking the wrong one fails silently:
+# linux-realtime, NOT linux-lowlatency. These names do not mean what they
+# suggest, and picking the wrong one fails silently:
 #
 #     linux-lowlatency   Depends: linux-image-generic (= 7.0.0-14.14)
 #                        "Complete Generic Linux kernel and headers with
@@ -82,15 +77,20 @@ linux-realtime
 #
 # Not in this list, on purpose:
 #
-#   ubuntustudio-photography   darktable and friends; PuralvOS is audio, video
-#                              and graphics
+#   ubuntustudio-video         video production tools; not in audio-only
+#   ubuntustudio-graphics      graphics/photo tools; not in audio-only
+#   ubuntustudio-photography   darktable and friends; not in audio-only
 #   ubuntustudio-publishing    scribus, calibre and a document suite; not
 #                              media production
 #   ubuntustudio-wallpapers    optional, kept out so the image carries only
 #                              what does work
 #   ubuntu-edu-music           music education classroom tools; revisit if
 #                              PuralvOS grows an education story
+#   ubuntustudio-menu          menu entries; kept for audio apps
+#   ubuntu-edu-music           music education classroom tools; revisit if
+#                              PuralvOS grows an education story
 #   ubuntu-studio-desktop      THE umbrella. Installing it is how a media
 #                              workstation turns into a general desktop with
 #                              LibreOffice, snapd, synaptic and printer drivers
 #                              in it. Never install it here; see excludes.list.
+

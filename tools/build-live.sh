@@ -62,7 +62,7 @@ say() { printf '\n=== %s\n' "$*"; }
 die() { printf 'build-live: %s\n' "$*" >&2; exit 1; }
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BASE_ISO="$REPO/base/ubuntustudio-26.04.1-desktop-amd64.iso"
+BASE_ISO="$REPO/base/ubuntustudio-26.10-desktop-amd64.iso"
 # The work directory needs room for the ISO, the unpacked layer and the chroot
 # all at once: about 40 GB. Pick a filesystem that has it rather than trusting
 # a fixed path, because the machine this runs on may not have the disk the
@@ -422,7 +422,7 @@ if [ -f "$FULL/etc/os-release" ]; then
 	# between rebranding and breaking the ecosystem the packages expect.
 	brand_os_release() {
 		sed -i -e 's#^NAME=.*#NAME="PuralvOS"#' \
-		       -e 's#^PRETTY_NAME=.*#PRETTY_NAME="PuralvOS 26.04.1 LTS"#' \
+		       -e 's#^PRETTY_NAME=.*#PRETTY_NAME="PuralvOS 26.10"#' \
 		       -e 's#^ID=.*#ID=puralvos#' \
 		       -e 's#^ID_LIKE=.*#ID_LIKE="ubuntu debian"#' \
 		       -e 's#^HOME_URL=.*#HOME_URL="https://github.com/alvgot/puralvos"#' \
@@ -446,7 +446,7 @@ if [ -f "$FULL/etc/os-release" ]; then
 	fi
 	sed -i -e 's/^DISTRIB_ID=.*/DISTRIB_ID=PuralvOS/' \
 	       -e 's/^DISTRIB_NAME=.*/DISTRIB_NAME="PuralvOS"/' \
-	       -e 's/^DISTRIB_DESCRIPTION=.*/DISTRIB_DESCRIPTION="PuralvOS 26.04.1 LTS"/' \
+	       -e 's/^DISTRIB_DESCRIPTION=.*/DISTRIB_DESCRIPTION="PuralvOS 26.10"/' \
 	       -e 's/^DISTRIB_CODENAME=.*/DISTRIB_CODENAME=puralvos/' \
 	       "$FULL/etc/lsb-release" 2>/dev/null || true
 	BRANDED=$(sed -n 's/^PRETTY_NAME="\(.*\)"$/\1/p' "$OSREL")
@@ -459,7 +459,7 @@ fi
 
 # The login banner. /etc/issue is base-files' and prints
 #
-#     Ubuntu 26.04.1 LTS
+#     Ubuntu 26.10
 #
 # on every virtual console, which is the first thing anyone sees on a machine
 # with no graphical boot and the thing the serial console of every verification
@@ -471,7 +471,7 @@ fi
 # read the live session's release from the wrong file again.
 for issue in "$FULL/etc/issue" "$FULL/etc/issue.net"; do
 	[ -e "$issue" ] || continue
-	printf 'PuralvOS 26.04.1 LTS \\n \\l\n' > "$issue"
+	printf 'PuralvOS 26.10 \\n \\l\n' > "$issue"
 done
 echo "  issue: $(head -1 "$FULL/etc/issue" 2>/dev/null)"
 
@@ -485,24 +485,25 @@ echo "  issue: $(head -1 "$FULL/etc/issue" 2>/dev/null)"
 # specified above won't be honoured and will be set to flavour string".
 #
 # The rest of the line is not free-form either, whatever the first draft of
-# this file assumed ("PuralvOS 26.04.1 LTS - Live amd64" looked tidy and cost
+# this file assumed ("PuralvOS 26.10 - Live amd64" looked tidy and cost
 # a whole verification boot). The desktop installer — ubuntu-desktop-
 # bootstrap, the window the live session opens by itself — parses this file
 # too, and it wants the stock shape:
 #
-#     <Flavour> <version> <LTS?> "<codename>" - Release amd64 (<date>)
+#     <Flavour> <version> <LTS?> "<codename>" - <Release|Official> amd64 (<date>)
 #
 # Its Flutter binary reads the quoted codename (a "get:codeName" symbol and
 # the dynamic "installationTypeTPMInfo<CodeName>" message keys live in
 # libapp.so) and a line without it is not a display problem: the installer
 # fails its parse, shows "Something went wrong" instead of the install
 # screens, and the reason is nowhere on screen. The base image's line is
-# "Ubuntu-Studio 26.04.1 LTS \"Resolute Raccoon\" - Release amd64 (20260826)";
-# this keeps every field of that except the name, so casper still gets
-# "puralvos", casper-bottom's cut -f3 still finds "LTS", and the installer
-# finds its codename.
+# "Ubuntu-Studio 26.10 \"Stonking Stingray\" - Official amd64 (20261014)";
+# this keeps every field of that except the name and the word Official, so
+# casper still reads "puralvos" off the first token and the installer finds
+# its codename. 26.10 is an interim release, so no "LTS" appears, exactly as
+# the stock line has none.
 if [ -f "$WORK/iso/.disk/info" ]; then
-	printf 'PuralvOS 26.04.1 LTS "Resolute Raccoon" - Release amd64 (%s)\n' \
+	printf 'PuralvOS 26.10 "Stonking Stingray" - Release amd64 (%s)\n' \
 		"$(date -u +%Y%m%d)" > "$WORK/iso/.disk/info"
 	echo "  iso label: $(cat "$WORK/iso/.disk/info")"
 fi
@@ -1075,14 +1076,55 @@ else
 	echo "  no org.ubuntustudio-dark.desktop in $LF, nothing to rename" >&2
 fi
 
-# The rest of the look-and-feel family. The -look package ships SIX more
-# global themes — plain "Ubuntu Studio", "Ubuntu Studio Live", Classic,
-# Classic Dark, and two macOS-alike layouts — and System Settings' Global
-# Theme page lists every one by its metadata Name. They are furniture: once
-# the kf5-settings templates below are repointed at org.puralvos.desktop,
-# nothing this image ships references any of them, and a distro that ships
-# one theme should not list seven, six of them another product's. Delete.
-for t in org.ubuntustudio.desktop org.ubuntustudio-live.desktop \
+# The light counterpart. The stock desktop ships the same theme in light and
+# dark, and the first audio-only boot review asked for the light one back: a
+# workstation used all day needs it. This is the stock light theme with this
+# product's names, copied before the deletion loop below runs, and pointed at
+# the same wallpaper. Everything it references is already in the image:
+# ColorScheme=Orchis, Theme=puralvos (the renamed light Plasma style), Icon
+# Theme=puralvos, kvantum and the Orchis window decoration.
+if [ -d "$LF/org.ubuntustudio.desktop" ]; then
+	rm -rf "$LF/org.puralvos-light.desktop"
+	cp -a "$LF/org.ubuntustudio.desktop" "$LF/org.puralvos-light.desktop"
+	grep -rIl 'Ubuntu Studio\|ubuntu-studio\|ubuntustudio' \
+		"$LF/org.puralvos-light.desktop" 2>/dev/null |
+	while IFS= read -r f; do
+		sed -i \
+			-e 's/Ubuntu Studio/PuralvOS/g' \
+			-e 's/ubuntu-studio-devel@ubuntu\.com/alvgot@users.noreply.github.com/g' \
+			-e 's#https://www\.ubuntustudio\.org#https://github.com/alvgot/puralvos#g' \
+			-e 's/org\.ubuntustudio\.desktop/org.puralvos-light.desktop/g' \
+			-e 's/ubuntustudio/puralvos/g' \
+			"$f"
+	done
+	sed -i 's/"Name": "PuralvOS"/"Name": "PuralvOS Light"/' \
+		"$LF/org.puralvos-light.desktop/metadata.json"
+	D="$LF/org.puralvos-light.desktop/contents/defaults"
+	if [ -f "$D" ]; then
+		sed -i -e 's/^Image=.*/Image=puralvos/' -e '/^\[ksplashrc\]/,$d' "$D"
+	fi
+	rm -rf "$LF/org.puralvos-light.desktop/contents/splash" \
+	       "$LF/org.puralvos-light.desktop/contents/lockscreen"
+	install -m 0644 "$ASSETS/preview-mark.png" \
+		"$LF/org.puralvos-light.desktop/contents/previews/preview.png"
+	install -m 0644 "$ASSETS/preview-mark.png" \
+		"$LF/org.puralvos-light.desktop/contents/previews/splash.png"
+	install -m 0644 "$ASSETS/lnf-fullscreenpreview.jpg" \
+		"$LF/org.puralvos-light.desktop/contents/previews/fullscreenpreview.jpg"
+	rm -rf "$LF/org.ubuntustudio.desktop"
+	echo "  look-and-feel: org.puralvos-light.desktop (renamed from org.ubuntustudio.desktop)"
+else
+	echo "  no org.ubuntustudio.desktop in $LF, no light theme to rename" >&2
+fi
+
+# The rest of the look-and-feel family. The -look package ships the desktop
+# in seven flavours — plain, Live, Classic, Classic Dark, two macOS-alike
+# layouts and the two this image keeps — and System Settings' Global Theme
+# page lists every one by its metadata Name. The rest is furniture: once the
+# kf5-settings templates below are repointed at org.puralvos.desktop,
+# nothing this image ships references any of them. Delete everything except
+# the dark theme (the default) and the light theme copied above.
+for t in org.ubuntustudio-live.desktop \
 	org.ubuntustudio-classic.desktop org.ubuntustudio-classic-dark.desktop \
 	org.ubuntustudio-maclike.desktop org.ubuntustudio-dark-maclike.desktop; do
 	[ -d "$LF/$t" ] || continue
@@ -1113,10 +1155,44 @@ for t in defaultPanel dock classicPanel livePanel globalMenuPanel; do
 	done
 	echo "  layout template: org.puralvos.desktop.$t"
 done
+
+# The stock panel ships a virtual desktop pager and a show-desktop button.
+# With a single virtual desktop the pager draws as an unlabelled white box,
+# and the show-desktop icon is invisible against this theme; on the first
+# audio-only boot both read as broken buttons. The launcher list also pins
+# Discover, which the online-accounts trim removes — the first audio-only
+# boot showed it as a white placeholder square. Drop all three from the
+# shipped templates and from the generator, which rewrites the templates at
+# session start.
+#
+# The menu applet is another stock assumption that does not hold: these
+# templates add "org.kde.plasma.kicker", but 26.10 ships no such plasmoid.
+# The Application Dashboard (kickerdash), which the stock dock layout uses,
+# is in plasma-widgets-addons; the online-accounts batch removes that package
+# because the purpose/kaccounts chain it shares goes with it, so the package
+# is installed back after the trim (see the Dolphin step). Point its button
+# at the tight PuralvOS mark and the puralvos path.
+for f in "$FULL"/usr/share/plasma/layout-templates/org.puralvos.desktop.*/contents/layout.js; do
+	[ -f "$f" ] || continue
+	sed -i -e '/org\.kde\.plasma\.pager/d' \
+	       -e '/org\.kde\.plasma\.minimizeall/d' \
+	       -e 's/,[[:space:]]*"applications:org\.kde\.discover\.desktop"//g' \
+	       -e 's/"org\.kde\.plasma\.kicker"/"org.kde.plasma.kickerdash"/g' \
+	       -e 's#/usr/share/pixmaps/ubuntustudio-logo-menu\.png#/usr/share/pixmaps/puralvos-logo-menu.png#g' \
+	       -e 's/kickerdash\.writeConfig("customButtonImage", "app-launcher")/kickerdash.writeConfig("customButtonImage", "\/usr\/share\/pixmaps\/puralvos-logo-menu.png")/' \
+	       -e 's/\(var kicker = panel\.addWidget("org\.kde\.plasma\.kickerdash")\)/\1\nkicker.writeConfig("useCustomButtonImage", "true")/' "$f"
+done
 if [ -f "$FULL/usr/sbin/ubuntustudio-panel-refresh" ]; then
-	sed -i 's/org\.ubuntustudio\.desktop/org.puralvos.desktop/g' \
+	sed -i -e 's/org\.ubuntustudio\.desktop/org.puralvos.desktop/g' \
+	       -e '/org\.kde\.plasma\.pager/d' \
+	       -e '/org\.kde\.plasma\.minimizeall/d' \
+	       -e 's/"applications:org\.kde\.discover\.desktop",[[:space:]]*//g' \
+	       -e 's#/usr/share/pixmaps/ubuntustudio-logo-menu\.png#/usr/share/pixmaps/puralvos-logo-menu.png#g' \
+	       -e 's/"org\.kde\.plasma\.kicker"/"org.kde.plasma.kickerdash"/g' \
+	       -e 's/kickerdash\.writeConfig("customButtonImage", "app-launcher")/kickerdash.writeConfig("customButtonImage", "\/usr\/share\/pixmaps\/puralvos-logo-menu.png")/' \
+	       -e 's/\(kicker\.writeConfig("customButtonImage", "\/usr\/share\/pixmaps\/puralvos-logo-menu\.png")\)/\1\nkicker.writeConfig("useCustomButtonImage", "true")/' \
 		"$FULL/usr/sbin/ubuntustudio-panel-refresh"
-	echo "  panel builder: template paths repointed"
+	echo "  panel builder: menu applet repointed to kickerdash, pager/show-desktop/discover dropped"
 fi
 
 # The kept theme's own layout script still points its two desktop
@@ -1206,8 +1282,47 @@ for dt in ubuntustudio ubuntustudio-dark; do
 	while IFS= read -r f; do
 		sed -i -e 's/Ubuntu Studio/PuralvOS/g' -e 's/ubuntustudio/puralvos/g' "$f"
 	done
+	# The stock dark Plasma theme declares the LIGHT icon theme in its
+	# metadata (Icons.Theme "ubuntustudio" -> "puralvos"), so the panel drew
+	# dark glyphs on a black bar and the icons disappeared. Each theme points
+	# at its own icon set, and the two display names say which is which.
+	case "$dst_name" in
+		puralvos-dark) theme_icons=puralvos-dark; theme_title="PuralvOS Dark" ;;
+		*)             theme_icons=puralvos;      theme_title="PuralvOS" ;;
+	esac
+	METADATA="$dst/metadata.json"
+	if [ -f "$METADATA" ]; then
+		python3 - "$METADATA" "$theme_icons" "$theme_title" <<'PYMETA'
+import json, sys
+path, icons, title = sys.argv[1:4]
+with open(path, encoding="utf-8") as fh:
+    meta = json.load(fh)
+meta.setdefault("Icons", {})["Theme"] = icons
+meta.setdefault("KPlugin", {})["Name"] = title
+with open(path, "w", encoding="utf-8") as fh:
+    json.dump(meta, fh, indent=4)
+    fh.write("\n")
+PYMETA
+	fi
+	# The dark panel background is black at 65% over a near-black wallpaper,
+	# so dark app icons (Audacity, the mixer, the settings tiles) sink into
+	# the bar. Lift the body and its edge pieces to a dark slate that still
+	# reads as the dark theme but gives those icons something to sit on.
+	# Done in the three panel variants Plasma picks from: adaptive (base),
+	# translucent, and solid.
+	if [ "$dst_name" = puralvos-dark ]; then
+		for panel in "$dst/widgets/panel-background.svg" \
+		             "$dst/translucent/widgets/panel-background.svg" \
+		             "$dst/solid/widgets/panel-background.svg"; do
+			[ -f "$panel" ] || continue
+			sed -i \
+				-e 's/style="fill:#000000;opacity:0.65"/style="fill:#29323f;opacity:0.92"/g' \
+				-e 's/style="fill:#282828;opacity:1;fill-opacity:1"/style="fill:#29323f;opacity:1;fill-opacity:1"/g' \
+				"$panel"
+		done
+	fi
 	rm -rf "$src"
-	echo "  desktop theme: $dst_name"
+	echo "  desktop theme: $dst_name (icons $theme_icons)"
 done
 for it in ubuntustudio ubuntustudio-dark; do
 	src="$FULL/usr/share/icons/$it"
@@ -1376,23 +1491,29 @@ fi
 # 4. The studio logos in the pixmaps and icon themes. The default panel's
 #    menu button points at ubuntustudio-logo-menu.png BY PATH
 #    (customButtonImage in ubuntustudio-panel-refresh), so the file stays
-#    and its content becomes the mark. The tiled version, not the bare
-#    strokes: at a panel's 22 px the strokes alone are a grey smudge, and the
-#    tile sits on the dark panel as if it belonged there. The hicolor theme
-#    carries the same logo at panel sizes and Papirus carries a set for the
-#    controls app; same treatment, found rather than listed so that a new
-#    size in a later package cannot slip through.
+#    and its content becomes the mark. mark-menu.png is the bare mark cropped
+#    to its ink and padded by 6%: mark-256.png is the mark on a black tile,
+#    and at a 22 px kicker button the tile is invisible on the dark panel
+#    while the letters inside it collapse to a dot — measured on the first
+#    audio-only boot. The tight version fills the button instead. Both the
+#    stock path and the PuralvOS path (used by the renamed layout templates)
+#    are installed; the hicolor theme carries the same logo at panel sizes
+#    and Papirus carries a set for the controls app; same treatment, found
+#    rather than listed so that a new size in a later package cannot slip
+#    through.
 for logo in "$FULL"/usr/share/pixmaps/ubuntustudio-logo*.png; do
 	[ -f "$logo" ] || continue
-	install -m 0644 "$ASSETS/mark-256.png" "$logo"
+	install -m 0644 "$ASSETS/mark-menu.png" "$logo"
 done
+install -m 0644 "$ASSETS/mark-menu.png" \
+	"$FULL/usr/share/pixmaps/puralvos-logo-menu.png"
 [ -f "$FULL/usr/share/pixmaps/ubuntustudio-logo.svg" ] && \
 	install -m 0644 "$ASSETS/mark.svg" "$FULL/usr/share/pixmaps/ubuntustudio-logo.svg"
 find "$FULL/usr/share/icons/hicolor" -iname '*ubuntustudio-logo*' -type f 2>/dev/null |
 while IFS= read -r logo; do
 	case "$logo" in
 		*.svg) install -m 0644 "$ASSETS/mark.svg" "$logo" ;;
-		*)     install -m 0644 "$ASSETS/mark-256.png" "$logo" ;;
+		*)     install -m 0644 "$ASSETS/mark-menu.png" "$logo" ;;
 	esac
 done
 find "$FULL/usr/share/icons/Papirus" -iname 'ubuntustudio-controls.svg' -type f 2>/dev/null |
@@ -1923,10 +2044,10 @@ fi
 #     installer, even the generic kernel — simulates to a REMOVED list
 #     containing darktable, digikam, hugin and the rest of the audio/video/
 #     graphics stack, because they are in the ubuntustudio metapackages'
-#     dependency chain and apt takes the chain with them. Those stay
-#     installed and their files are branded or removed individually in
-#     brand_the_tree.
-say "removing photography and publishing"
+#     dependency chain and apt takes the chain with them. What actually
+#     happens to that stack is decided list by list in the audio trim below;
+#     the generic kernel is unshipped at repack time, by file.
+say "removing the non-audio task bundles"
 purge_in_chroot() {
 	local p
 	for p in "$@"; do
@@ -1936,7 +2057,84 @@ purge_in_chroot() {
 			head -3 | sed 's/^/  /' || true
 	done
 }
-purge_in_chroot ubuntustudio-photography ubuntustudio-publishing
+purge_in_chroot ubuntustudio-photography ubuntustudio-publishing \
+	ubuntustudio-video ubuntustudio-graphics
+
+# --------------------------------------------------------------------------
+# the audio trim
+# --------------------------------------------------------------------------
+# tasks.list decides what this product ships. The twelve lists in
+# tools/audio-trim decide what the stock image leaked in and the product does
+# not ship anyway. They are one file per batch and they are applied in
+# numeric order, because that is how they were verified: each batch was
+# simulated and then really purged inside a working copy reconstructed
+# exactly as this script builds one, and the audio anchors were checked
+# after every batch.
+#
+# The command is not an approximation of the vetting, it is the vetting
+# command:
+#
+#	apt-get purge -y --auto-remove <names in the list>
+#
+# The order matters, and so does --auto-remove. Part of what disappears in
+# each batch is orphans that only that flag moves at that moment; the
+# numbers that were vetted are 109, 42, 264, 155, 43, 49, 54, 17, 29, 0,
+# 72 and 17 packages, and each batch's log ($WORK/purge-<list>.log) says
+# what it actually did. Merging the lists or dropping one is a different
+# transaction that was never verified, even if the names add up.
+#
+# The two candidates that did NOT survive vetting are recorded in
+# excludes.list: libsnapd-glib-2-1 is load-bearing for the PipeWire and
+# WirePlumber modules, and the GPU batch (libplacebo360) is a hard
+# dependency chain into ffmpeg. And this is a trim, not a sweep: what apt
+# must not let go — the desktop, the DAWs, OBS, the JACK/PipeWire stack —
+# is marked manual before any of this runs, so autoremove can never reach
+# it no matter what a future list says.
+say "protecting the audio stack"
+# shellcheck disable=SC2086
+#
+# xserver-xorg-core is in this list even though it is not audio: purging the
+# video and graphics task bundles orphans it (measured: without this mark the
+# next autoremove takes the X server along with qlcplus, the wacom driver and
+# the rest of that chain). It is desktop infrastructure, not a media bundle,
+# and the X11 sessions SDDM offers depend on it.
+#
+# Dolphin cannot be saved with a mark: it shares the baloo/kio widgets with
+# okular, and the documents batch resolves the whole chain into one purge
+# transaction (measured: purge-05-documents.log lists dolphin as REMOVED even
+# with the manual mark). It is the file manager the panel pins, so it is
+# installed back after the trim, next to Firefox.
+chroot "$FULL" apt-mark manual \
+	obs-studio obs-plugins libobs0t64 obs-pipewire-audio-capture \
+	ffmpeg vlc ardour carla mixxx lmms hydrogen csound musescore3 \
+	pipewire wireplumber jackd2 libjack-jackd2-0 \
+	plasma-desktop plasma-workspace sddm systemsettings \
+	xserver-xorg-core >/dev/null
+
+say "removing the audio trim"
+TRIM_REMOVED=0
+for TRIMFILE in "$REPO"/tools/audio-trim/*.list; do
+	mapfile -t TRIMNAMES < <(grep -vE '^[[:space:]]*(#|$)' "$TRIMFILE")
+	[ "${#TRIMNAMES[@]}" -gt 0 ] || continue
+	TRIMLOG="$WORK/purge-$(basename "$TRIMFILE" .list).log"
+	if chroot "$FULL" env DEBIAN_FRONTEND=noninteractive \
+		apt-get purge -y --auto-remove "${TRIMNAMES[@]}" >"$TRIMLOG" 2>&1; then
+		TRIMN=$(grep -c '^Removing ' "$TRIMLOG" || true)
+		TRIM_REMOVED=$((TRIM_REMOVED + TRIMN))
+		printf '  %-26s %4d removed\n' "$(basename "$TRIMFILE")" "$TRIMN"
+	else
+		die "purging $(basename "$TRIMFILE") failed; the removals are half done.
+     The apt output is in $TRIMLOG. Re-run the build; the chroot stage starts
+     again from the stock union and re-applies the whole sequence."
+	fi
+done
+# Close with the sweep the batches themselves ran in vetting: anything a
+# batch orphaned that no later batch still needed goes here. Then empty the
+# apt cache so the download indices are not in the image.
+chroot "$FULL" env DEBIAN_FRONTEND=noninteractive \
+	apt-get autoremove --purge -y >"$WORK/purge-autoremove.log" 2>&1 || true
+chroot "$FULL" env DEBIAN_FRONTEND=noninteractive apt-get clean
+echo "  trim: $TRIM_REMOVED packages removed; orphans purged; apt cache empty"
 
 # --------------------------------------------------------------------------
 # branding
@@ -1945,6 +2143,106 @@ purge_in_chroot ubuntustudio-photography ubuntustudio-publishing
 # unpack, the chroot and the kernel are above; this is the same function
 # --author-only calls, so both paths brand the tree identically.
 brand_the_tree
+
+# --------------------------------------------------------------------------
+# Firefox
+# --------------------------------------------------------------------------
+# The archive's firefox in 26.10 is 1:1snap1-0ubuntu11 — a deb that installs
+# the snap. This image masks snapd, so that package is not a browser. Mozilla
+# publishes Firefox in a signed apt repository under the same name; with the
+# origin pinned above the archive, apt installs a real deb that updates with
+# the rest of the system, which is the point of putting a browser on the
+# image instead of leaving the panel's browser pin empty.
+#
+# Installed after brand_the_tree so the menu hygiene pass cannot treat the
+# new desktop entry as leftover studio furniture.
+say "Firefox from Mozilla's apt repository"
+install -d -m 0755 "$FULL/etc/apt/keyrings" \
+	"$FULL/etc/apt/preferences.d" "$FULL/etc/xdg"
+if command -v curl >/dev/null 2>&1; then
+	curl -fsSL --retry 3 \
+		-o "$FULL/etc/apt/keyrings/packages.mozilla.org.asc" \
+		https://packages.mozilla.org/apt/repo-signing-key.gpg \
+		|| die "could not fetch the Mozilla apt signing key"
+else
+	wget -q -O "$FULL/etc/apt/keyrings/packages.mozilla.org.asc" \
+		https://packages.mozilla.org/apt/repo-signing-key.gpg \
+		|| die "could not fetch the Mozilla apt signing key (wget)"
+fi
+cat > "$FULL/etc/apt/sources.list.d/mozilla.sources" <<'EOF'
+Types: deb
+URIs: https://packages.mozilla.org/apt
+Suites: mozilla
+Components: main
+Signed-By: /etc/apt/keyrings/packages.mozilla.org.asc
+EOF
+cat > "$FULL/etc/apt/preferences.d/mozilla" <<'EOF'
+Package: *
+Pin: origin packages.mozilla.org
+Pin-Priority: 1000
+EOF
+# The image ships cdrom.sources (file:///cdrom) so an installed system can
+# use its own DVD; inside the chroot that path does not exist and apt treats
+# the unreachable source as fatal. The package stage above disables it and
+# restores it afterwards, and this step runs after that restore — so do the
+# same dance here, under its own suffix.
+for f in "$FULL"/etc/apt/sources.list.d/cdrom.sources; do
+	[ -e "$f" ] && mv "$f" "$f.puralvos-firefox-disabled"
+done
+chroot "$FULL" env DEBIAN_FRONTEND=noninteractive apt-get update >/dev/null \
+	|| die "apt-get update with the Mozilla repository failed"
+chroot "$FULL" env DEBIAN_FRONTEND=noninteractive \
+	apt-get install -y firefox >/dev/null \
+	|| die "installing firefox from packages.mozilla.org failed"
+chroot "$FULL" env DEBIAN_FRONTEND=noninteractive apt-get clean
+for f in "$FULL"/etc/apt/sources.list.d/cdrom.sources.puralvos-firefox-disabled; do
+	[ -e "$f" ] && mv "$f" "${f%.puralvos-firefox-disabled}"
+done
+FFV=$(chroot "$FULL" dpkg-query -W -f='${Version}' firefox 2>/dev/null || true)
+case "$FFV" in
+	"") die "firefox is not installed after the Mozilla repository install" ;;
+	*snap*) die "the installed firefox is the Ubuntu snap stub ($FFV); the Mozilla pin did not take" ;;
+esac
+# preferred://browser in the panel resolves through the XDG defaults. A live
+# user has no ~/.config/mimeapps.list, so /etc/xdg/mimeapps.list is what the
+# browser pin and any clicked http(s) link resolve against.
+cat > "$FULL/etc/xdg/mimeapps.list" <<'EOF'
+[Default Applications]
+text/html=firefox.desktop
+x-scheme-handler/http=firefox.desktop
+x-scheme-handler/https=firefox.desktop
+EOF
+echo "  firefox: $FFV (packages.mozilla.org)"
+
+# --------------------------------------------------------------------------
+# the panel's desktop furniture
+# --------------------------------------------------------------------------
+# Reinstall what the trim resolves away but the panel is built around. The
+# documents batch takes Dolphin with the okular chain (purge-05-documents.log
+# lists it as REMOVED even when the package is marked manual), and the
+# online-accounts batch takes plasma-widgets-addons with the purpose/
+# kaccounts chain (purge-07-online-accounts.log does the same). The latter
+# is the only package that provides the kickerdash applet the panel
+# templates now add, and the first boots without it showed the menu button
+# as a missing-widget placeholder.
+#
+# Done here, while the package index is current from the Firefox step (the
+# trim runs before any network apt update and does not need one), and after
+# brand_the_tree so the menu hygiene pass does not see a file manager it
+# never expected. --no-install-recommends keeps the thumbnailers and
+# kio-extras plugins the trim removed from sneaking back in; both packages
+# work from their Depends.
+say "restoring Dolphin and the panel menu applet"
+FURNITURE="dolphin plasma-widgets-addons"
+chroot "$FULL" env DEBIAN_FRONTEND=noninteractive \
+	apt-get install -y --no-install-recommends $FURNITURE >/dev/null \
+	|| die "restoring dolphin/plasma-widgets-addons after the trim failed"
+for p in $FURNITURE; do
+	chroot "$FULL" dpkg-query -W -f='${Status}' "$p" 2>/dev/null |
+		grep -q 'install ok installed' ||
+		die "$p is not installed after the restore"
+done
+echo "  dolphin $(chroot "$FULL" dpkg-query -W -f='${Version}' dolphin), plasma-widgets-addons $(chroot "$FULL" dpkg-query -W -f='${Version}' plasma-widgets-addons)"
 
 # --------------------------------------------------------------------------
 # repack

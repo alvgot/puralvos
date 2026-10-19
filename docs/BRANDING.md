@@ -20,7 +20,7 @@ wallpaper" is not a task.
 
 | Layer | Where it lives | What has to happen |
 | --- | --- | --- |
-| **ISO label** | `/.disk/info` | Currently `Ubuntu-Studio 26.04.1 LTS "Resolute Raccoon" - Release amd64 (20260826)`. This string is what the boot menu and the installer show. |
+| **ISO label** | `/.disk/info` | Currently `Ubuntu-Studio 26.10 "Stonking Stingray" - Official amd64 (20261014)`. This string is what the boot menu and the installer show. |
 | **Boot menu** | GRUB menuentry titles, `grub.cfg` prompts | "Try or Install Ubuntu Studio" → PuralvOS. Also `Try or Install`, `Install (OEM)`, the `f`/`e`/`c` help lines. |
 | **Boot splash** | `plymouth-theme-*` | Ubuntu Studio's spinner. Replaced. |
 | **Login screen** | SDDM theme, `/usr/share/sddm/themes/` | Ubuntu logo, wordmark, background. |
@@ -34,12 +34,14 @@ wallpaper" is not a task.
 
 ## The one that will bite: `ubiquity-ubuntu-artwork`
 
-> **Note (2026-10-18).** The installer that actually ships on Ubuntu Studio
-> 26.04.1 is the `ubuntu-desktop-bootstrap` snap, not ubiquity, and the default
-> PuralvOS build is the Live image with snapd masked, so it has no installer at
-> all. The `ubiquity-ubuntu-artwork` analysis below is kept because it is the
-> path the installable variant and the installed-system plan use; the snap's
-> own wizard artwork is inside the snap and is not overridden by this build.
+> **Note (2026-10-19).** The installer that actually ships on Ubuntu Studio
+> 26.10 is the `ubuntu-desktop-bootstrap` snap (revision 705,
+> `26.10/stable/ubuntu-26.10`), not ubiquity, and the default PuralvOS build is
+> the Live image with snapd masked, so it has no installer at all. The
+> `ubiquity-ubuntu-artwork` analysis below is kept because it is the path the
+> installable variant and the installed-system plan use; ubiquity 26.10.2 is
+> still carried on the ISO (now under `pool/universe`), and the snap's own
+> wizard artwork is inside the snap and is not overridden by this build.
 
 This package is not optional in practice. Ubiquity's templates reference it, so
 removing it leaves a broken installer rather than an unbranded one. The
@@ -177,7 +179,7 @@ Not done:
 The self test checks for **Ubuntu Studio**, not for the substring `ubuntu`, and
 that distinction is deliberate.
 
-`ID_LIKE="ubuntu debian"` and `UBUNTU_CODENAME=resolute` stay. PuralvOS is a
+`ID_LIKE="ubuntu debian"` and `UBUNTU_CODENAME=stonking` stay. PuralvOS is a
 derivative of Ubuntu Studio, which is a derivative of Debian; every Debian
 derivative carries the family marker, and Ubuntu itself ships
 `ID_LIKE=debian`. `UBUNTU_CODENAME` is what keeps version-locked dependencies

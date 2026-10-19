@@ -1,6 +1,6 @@
 # PuralvOS
 
-An audio, video and graphics workstation built on **Ubuntu Studio 26.04.1 LTS**.
+An audio-only workstation built on **Ubuntu Studio 26.10**.
 
 Named for the two of us: **Pur**ia + **Alv**.
 
@@ -8,15 +8,16 @@ Named for the two of us: **Pur**ia + **Alv**.
 
 ## What this is
 
-Ubuntu Studio, narrowed to three disciplines and with a real time kernel, so
-that every machine that comes off this build is a working audio, video and
-graphics workstation out of the box.
+Ubuntu Studio, narrowed to audio and with a real time kernel, so that every
+machine that comes off this build is a working audio workstation out of the
+box. This is the audio branch of a four-image family: the full merged ISO and
+the graphics-only and video-only branches are built from the same harness.
 
 Three things define it:
 
-1. **Only what does the work.** Audio, video, graphics. No LibreOffice, no
-   snapd, no printer drivers, no synaptic.
-2. **The real time kernel, from the distro.** `linux-lowlatency` out of the
+1. **Only what does the work.** Audio. No video editors, no graphics suites,
+   no LibreOffice, no snapd, no printer drivers, no synaptic.
+2. **The real time kernel, from the distro.** `linux-realtime` out of the
    Ubuntu archive. Not a PPA, so it keeps getting security updates.
 3. **Our packages upgrade; yours don't.** The curated set we ship stays
    current. Anything you install afterwards is yours, and we leave it alone.
@@ -25,14 +26,14 @@ Three things define it:
 
 | | |
 | --- | --- |
-| Base | Ubuntu Studio 26.04.1 LTS "Resolute Raccoon" |
-| Codename | `resolute` |
-| Support | until April 2029 |
-| Kernel | `linux-lowlatency` 7.0, from the archive |
+| Base | Ubuntu Studio 26.10 "Stonking Stingray" |
+| Codename | `stonking` |
+| Support | until July 2027 (interim release) |
+| Kernel | `linux-realtime` 7.3, from the archive |
 | Desktop | Plasma (KDE), inherited from the base |
 | Architecture | amd64 |
 
-ISO: `ubuntustudio-26.04.1-desktop-amd64.iso`, 6.6 GB, checksum pinned in
+ISO: `ubuntustudio-26.10-desktop-amd64.iso`, 6.4 GB, checksum pinned in
 [`base/CHECKSUMS`](base/CHECKSUMS) and verified on download.
 
 ## On proprietary software
