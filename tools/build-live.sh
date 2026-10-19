@@ -1113,9 +1113,59 @@ if [ -d "$LF/org.ubuntustudio.desktop" ]; then
 		"$LF/org.puralvos-light.desktop/contents/previews/fullscreenpreview.jpg"
 	rm -rf "$LF/org.ubuntustudio.desktop"
 	echo "  look-and-feel: org.puralvos-light.desktop (renamed from org.ubuntustudio.desktop)"
+
+	# The light copy's own layout still asks for things the rename created:
+	# loadTemplate("org.puralvos-light.desktop.defaultPanel") names a template
+	# that does not exist (the templates are org.puralvos.desktop.*), and the
+	# puralvos-default*.png wallpapers were deleted with the stock artwork.
+	# With the template missing the layout script fails, Plasma falls back to
+	# its built-in panel, and that fallback is what came up dark whatever the
+	# theme said. Point both at what the image ships.
+	LLJS="$LF/org.puralvos-light.desktop/contents/layouts/org.kde.plasma.desktop-layout.js"
+	if [ -f "$LLJS" ]; then
+		sed -i \
+			-e 's/org\.puralvos-light\.desktop\.defaultPanel/org.puralvos.desktop.defaultPanel/g' \
+			-e 's/org\.puralvos-light\.desktop\.dock/org.puralvos.desktop.dock/g' \
+			-e 's/org\.puralvos-light\.desktop\.classicPanel/org.puralvos.desktop.classicPanel/g' \
+			-e 's/org\.puralvos-light\.desktop\.livePanel/org.puralvos.desktop.livePanel/g' \
+			-e 's/org\.puralvos-light\.desktop\.globalMenuPanel/org.puralvos.desktop.globalMenuPanel/g' \
+			-e 's#file:///usr/share/wallpapers/puralvos-default2\.png#file:///usr/share/wallpapers/puralvos/contents/images/2560x1440.png#' \
+			-e 's#file:///usr/share/wallpapers/puralvos-default\.png#file:///usr/share/wallpapers/puralvos/contents/images/3840x2160.png#' \
+			"$LLJS"
+		echo "  light layout: template and wallpapers repointed"
+	fi
 else
 	echo "  no org.ubuntustudio.desktop in $LF, no light theme to rename" >&2
 fi
+
+# Only one look-and-feel may claim to be the default. Both stock themes carry
+# EnabledByDefault, and with no explicit choice Plasma takes the first one it
+# finds, which is org.puralvos.desktop (the dark one) — that is why a fresh
+# live user came up dark and wrote a dark ~/.config/kdedefaults whatever
+# kdeglobals said. The light theme is the default; the dark one is a choice.
+python3 - "$LF/org.puralvos.desktop/metadata.json" \
+           "$LF/org.puralvos-light.desktop/metadata.json" <<'PYLNF'
+import json, sys
+dark, light = sys.argv[1:3]
+for path, enabled in ((dark, False), (light, True)):
+    with open(path, encoding="utf-8") as fh:
+        meta = json.load(fh)
+    meta.setdefault("KPlugin", {})["EnabledByDefault"] = enabled
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(meta, fh, indent=4)
+        fh.write("\n")
+PYLNF
+echo "  look-and-feel: light is the only EnabledByDefault theme"
+
+# The dark look-and-feel package is not shipped. With it present the session
+# applied it and wrote ~/.config/kdedefaults with name=puralvos-dark,
+# ColorScheme=OrchisDark and widgetStyle=kvantum-dark, and that file wins over
+# plasmarc, kdeglobals and /etc/xdg/kdedefaults alike — every "make light the
+# default" attempt still came up dark because of it, whatever the theme
+# markers said. The dark Plasma style and icon theme stay installed and can be
+# selected in System Settings; only the package that auto-applies dark is gone.
+rm -rf "$LF/org.puralvos.desktop"
+echo "  look-and-feel: dark package removed (style and icons remain selectable)"
 
 # The rest of the look-and-feel family. The -look package ships the desktop
 # in seven flavours — plain, Live, Classic, Classic Dark, two macOS-alike
@@ -1154,6 +1204,13 @@ for t in defaultPanel dock classicPanel livePanel globalMenuPanel; do
 		       -e 's/ubuntustudio/puralvos/g' "$f"
 	done
 	echo "  layout template: org.puralvos.desktop.$t"
+	# Plasma 6.7's default panel background is Adaptive, which tints the bar
+	# from the wallpaper; over a near-black wallpaper that is why the light
+	# panel still rendered dark. Opaque selects the theme's solid variant.
+	lj="$new/contents/layout.js"
+	if [ -f "$lj" ]; then
+		sed -i 's/^\(panel\.height = gridUnit \* [0-9.]*\)$/\1\npanel.opacity = "opaque"/' "$lj"
+	fi
 done
 
 # The stock panel ships a virtual desktop pager and a show-desktop button.
@@ -1180,7 +1237,8 @@ for f in "$FULL"/usr/share/plasma/layout-templates/org.puralvos.desktop.*/conten
 	       -e 's/"org\.kde\.plasma\.kicker"/"org.kde.plasma.kickerdash"/g' \
 	       -e 's#/usr/share/pixmaps/ubuntustudio-logo-menu\.png#/usr/share/pixmaps/puralvos-logo-menu.png#g' \
 	       -e 's/kickerdash\.writeConfig("customButtonImage", "app-launcher")/kickerdash.writeConfig("customButtonImage", "\/usr\/share\/pixmaps\/puralvos-logo-menu.png")/' \
-	       -e 's/\(var kicker = panel\.addWidget("org\.kde\.plasma\.kickerdash")\)/\1\nkicker.writeConfig("useCustomButtonImage", "true")/' "$f"
+	       -e 's/\(var kicker = panel\.addWidget("org\.kde\.plasma\.kickerdash")\)/\1\nkicker.writeConfig("useCustomButtonImage", "true")/' \
+	       -e 's/^\(panel\.height = gridUnit \* [0-9.]*\)$/\1\npanel.opacity = "opaque"/' "$f"
 done
 if [ -f "$FULL/usr/sbin/ubuntustudio-panel-refresh" ]; then
 	sed -i -e 's/org\.ubuntustudio\.desktop/org.puralvos.desktop/g' \
@@ -1191,6 +1249,7 @@ if [ -f "$FULL/usr/sbin/ubuntustudio-panel-refresh" ]; then
 	       -e 's/"org\.kde\.plasma\.kicker"/"org.kde.plasma.kickerdash"/g' \
 	       -e 's/kickerdash\.writeConfig("customButtonImage", "app-launcher")/kickerdash.writeConfig("customButtonImage", "\/usr\/share\/pixmaps\/puralvos-logo-menu.png")/' \
 	       -e 's/\(kicker\.writeConfig("customButtonImage", "\/usr\/share\/pixmaps\/puralvos-logo-menu\.png")\)/\1\nkicker.writeConfig("useCustomButtonImage", "true")/' \
+	       -e 's/^\(panel\.height = gridUnit \* [0-9.]*\)$/\1\npanel.opacity = "opaque"/' \
 		"$FULL/usr/sbin/ubuntustudio-panel-refresh"
 	echo "  panel builder: menu applet repointed to kickerdash, pager/show-desktop/discover dropped"
 fi
@@ -1349,15 +1408,87 @@ done
 KDEG="$FULL/etc/xdg/kdeglobals"
 mkdir -p "$FULL/etc/xdg"
 if [ -f "$KDEG" ] && grep -qE '^[[:space:]]*LookAndFeelPackage[[:space:]]*=' "$KDEG"; then
-	sed -i -E 's|^[[:space:]]*LookAndFeelPackage[[:space:]]*=.*|LookAndFeelPackage=org.puralvos.desktop|' "$KDEG"
+	sed -i -E 's|^[[:space:]]*LookAndFeelPackage[[:space:]]*=.*|LookAndFeelPackage=org.puralvos-light.desktop|' "$KDEG"
 elif [ -f "$KDEG" ] && grep -qE '^\[KDE\]' "$KDEG"; then
-	awk '/^\[KDE\]/ && !done {print; print "LookAndFeelPackage=org.puralvos.desktop"; done=1; next} {print}' \
+	awk '/^\[KDE\]/ && !done {print; print "LookAndFeelPackage=org.puralvos-light.desktop"; done=1; next} {print}' \
 		"$KDEG" > "$KDEG.new" && mv "$KDEG.new" "$KDEG"
 else
 	[ -f "$KDEG" ] || : > "$KDEG"
-	printf '[KDE]\nLookAndFeelPackage=org.puralvos.desktop\n' >> "$KDEG"
+	printf '[KDE]\nLookAndFeelPackage=org.puralvos-light.desktop\n' >> "$KDEG"
 fi
-echo "  kdeglobals: LookAndFeelPackage=org.puralvos.desktop"
+echo "  kdeglobals: LookAndFeelPackage=org.puralvos-light.desktop (light default)"
+
+# LookAndFeelPackage is a marker, not an instruction: a live first login does
+# not reliably run the LNF applier, which is why the first build with the
+# light default still came up on the dark widgets. Set the pieces the LNF
+# would have set, in the files the session reads directly.
+kde_key() {
+	# kde_key FILE SECTION KEY VALUE -- set one key in one section, creating
+	# the section if needed and never touching the same key in another one.
+	python3 - "$@" <<'PYK'
+import sys
+path, sec, key, val = sys.argv[1:5]
+try:
+    lines = open(path, encoding="utf-8").read().splitlines()
+except FileNotFoundError:
+    lines = []
+out, insec, done = [], False, False
+for line in lines:
+    stripped = line.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        if insec and not done:
+            out.append(f"{key}={val}")
+            done = True
+        insec = stripped == f"[{sec}]"
+        out.append(line)
+        continue
+    if insec and stripped.split("=", 1)[0].strip() == key:
+        out.append(f"{key}={val}")
+        done = True
+        continue
+    out.append(line)
+if insec and not done:
+    out.append(f"{key}={val}")
+    done = True
+if not done:
+    if out and out[-1].strip():
+        out.append("")
+    out.extend([f"[{sec}]", f"{key}={val}"])
+with open(path, "w", encoding="utf-8") as fh:
+    fh.write("\n".join(out) + "\n")
+PYK
+}
+kde_key "$KDEG" General ColorScheme Orchis
+kde_key "$KDEG" Icons Theme puralvos
+kde_key "$FULL/etc/xdg/plasmarc" Theme name puralvos
+kde_key "$FULL/etc/xdg/kwinrc" org.kde.kdecoration2 library org.kde.kwin.aurorae
+kde_key "$FULL/etc/xdg/kwinrc" org.kde.kdecoration2 theme __aurorae__svg__Orchis
+echo "  kdeglobals: ColorScheme=Orchis, Icons=puralvos; plasmarc Theme=puralvos"
+
+# kdedefaults is the directory KDE reads as the *defaults* layer, and on a
+# live first login it is what actually decides the Plasma style: the session
+# wrote ~/.config/kdedefaults/plasmarc with name=puralvos-dark even though
+# plasmarc said puralvos, which is why the panel stayed dark whatever the
+# theme was set to. Ship the defaults in every place they are read from.
+KDF="$FULL/etc/xdg/kdedefaults"
+install -d "$KDF"
+cat > "$KDF/plasmarc" <<'EOF'
+[Theme]
+name=puralvos
+EOF
+cat > "$KDF/kdeglobals" <<'EOF'
+[KDE]
+LookAndFeelPackage=org.puralvos-light.desktop
+
+[General]
+ColorScheme=Orchis
+
+[Icons]
+Theme=puralvos
+EOF
+install -d "$FULL/etc/skel/.config/kdedefaults"
+cp -a "$KDF/." "$FULL/etc/skel/.config/kdedefaults/"
+echo "  kdedefaults: plasmarc name=puralvos, light kdeglobals"
 
 # The wallpaper as a first-class Plasma wallpaper package, so the LNF's
 # Image=puralvos resolves and the picker shows it by name. Plasma resolves
@@ -1430,6 +1561,43 @@ X-KDE-autostart-after=panel
 OnlyShowIn=KDE;
 EOF
 echo "  boot marker: /etc/xdg/autostart/puralvos-bootmark.desktop"
+
+# A boot report on the desktop, written once per session.
+#
+# "It takes 3m40s" is not actionable and cannot be checked from a KVM host,
+# because the host boots from NVMe and the laptop boots from a USB stick. This
+# puts systemd's own account of the boot in ~/boot-report.txt after login, so
+# the slow unit and the critical chain can be read off the machine that is
+# actually slow. systemd-analyze needs the journal only, not root.
+cat > "$FULL/usr/local/bin/puralvos-boot-report" <<'EOS'
+#!/bin/sh
+out="$HOME/boot-report.txt"
+{
+	printf 'PuralvOS boot report %s\n' "$(date -Is)"
+	echo
+	echo '== systemd-analyze =='
+	systemd-analyze 2>&1
+	echo
+	echo '== critical-chain =='
+	systemd-analyze critical-chain 2>&1
+	echo
+	echo '== blame (top 40) =='
+	systemd-analyze blame 2>&1 | head -40
+} > "$out" 2>&1
+chmod 0644 "$out"
+EOS
+chmod 0755 "$FULL/usr/local/bin/puralvos-boot-report"
+cat > "$FULL/etc/xdg/autostart/puralvos-boot-report.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=PuralvOS Boot Report
+Comment=Write systemd's boot timing account to ~/boot-report.txt
+Exec=/usr/local/bin/puralvos-boot-report
+NoDisplay=true
+X-KDE-autostart-after=panel
+OnlyShowIn=KDE;
+EOF
+echo "  boot report: ~/boot-report.txt at login"
 
 say "Ubuntu Studio leftovers the packages keep"
 # Packages this image keeps — because their files are load-bearing, the LNF
@@ -1754,6 +1922,32 @@ if chroot "$FULL" test -x /usr/bin/kbuildsycoca6; then
 fi
 # The pre-created accounts were made before that cache existed, and
 # useradd -m copies skeleton at creation time.
+# The light theme as the user's own default, not just the system fallback.
+# /etc/xdg alone did not take on the live first login (the session still came
+# up on puralvos-dark), so the same keys are written where the session reads
+# them: skeleton, which casper copies for the live user, and the pre-created
+# accounts' homes below.
+install -d "$FULL/etc/skel/.config"
+cat > "$FULL/etc/skel/.config/kdeglobals" <<'EOF'
+[KDE]
+LookAndFeelPackage=org.puralvos-light.desktop
+
+[General]
+ColorScheme=Orchis
+
+[Icons]
+Theme=puralvos
+EOF
+cat > "$FULL/etc/skel/.config/plasmarc" <<'EOF'
+[Theme]
+name=puralvos
+EOF
+cat > "$FULL/etc/skel/.config/kwinrc" <<'EOF'
+[org.kde.kdecoration2]
+library=org.kde.kwin.aurorae
+theme=__aurorae__svg__Orchis
+EOF
+
 for h in "$FULL"/home/*; do
 	[ -d "$h" ] || continue
 	[ -d "$FULL/etc/skel/.cache" ] || break
@@ -1762,6 +1956,11 @@ for h in "$FULL"/home/*; do
 	uid=$(stat -c %u "$h")
 	gid=$(stat -c %g "$h")
 	chown -R "$uid:$gid" "$h/.cache" 2>/dev/null || true
+	for f in kdeglobals plasmarc kwinrc; do
+		[ -f "$FULL/etc/skel/.config/$f" ] || continue
+		install -Dm0644 "$FULL/etc/skel/.config/$f" "$h/.config/$f"
+		chown "$uid:$gid" "$h/.config/$f" 2>/dev/null || true
+	done
 done
 
 } # end brand_the_tree
