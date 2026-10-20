@@ -26,9 +26,9 @@ Three things define it:
 | | |
 | --- | --- |
 | Base | Ubuntu Studio 26.10 "Stonking Stingray" |
-| Codename | `resolute` |
+| Codename | `stonking` |
 | Support | until April 2029 |
-| Kernel | `linux-lowlatency` 7.0, from the archive |
+| Kernel | `linux-realtime` (PREEMPT_RT) 7.3, from the archive |
 | Desktop | Plasma (KDE), inherited from the base |
 | Architecture | amd64 |
 
