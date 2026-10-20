@@ -1,12 +1,11 @@
-# Video trim, batch 03 of 12: graphics, photography, and raster/vector imaging.
+# Graphics trim, batch 03: graphics, photography, and raster/vector imaging.
 #
-# Vetted list. tools/build-live.sh applies these files in numeric order with:
+# DISABLED on this branch. This is the product, not a leak: GIMP, Krita,
+# Inkscape, MyPaint, Pencil2D, PikoPixel, Skanpage, Synfig and the rest of the
+# graphics task must stay. Keeping the full list here records what the other
+# branches remove; applying it to PuralvOS Graphics would delete the image.
 #
-#     apt-get purge -y --auto-remove <the names below>
-#
-# The order is part of the verification: this working copy was purged with
-# these batches in this order, and the video anchors were checked after
-# every batch. Do not merge or reorder the files.
+# The audio and video batches still remove their own applications.
 
 gimp
 gimp-data

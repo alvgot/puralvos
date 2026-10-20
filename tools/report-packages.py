@@ -72,15 +72,15 @@ RULES = [
      "A GTK front end for apt. apt is the package manager and it stays."),
 
     ("photography", r"^darktable$",
-     "Photography. Not in the video product."),
+     "Photography. Not in the graphics product."),
 
     ("mDNS", r"^avahi",
      "7 packages of Zeroconf/mDNS service discovery. Useful for a network "
      "workstation with shared speakers, useless otherwise."),
 
     ("web", r"^firefox$",
-     "A general web browser on a machine that already has one job. Kdenlive "
-     "and VLC will open URLs without it."),
+     "A general web browser on a machine that already has one job. None of "
+     "the graphics applications need it to open local files."),
 
     ("evolution", r"^evolution-data-server",
      "Contacts and calendar backend with nothing in front of it."),
@@ -111,18 +111,19 @@ PROTECTED = {
     "avahi-daemon": "may be wanted for network audio discovery; decide once, "
                      "not by accident.",
     "python3-dbus": "everything on the desktop talks over D-Bus.",
-    "pipewire": "the audio server. Video playback, capture and editing all "
-                "route through it; removing it breaks Kdenlive and OBS.",
+    "pipewire": "the audio server. Preview playback, screen capture and "
+                "desktop integration route through it; removing it breaks the "
+                "graphics session.",
     "wireplumber": "PipeWire's session manager. Without it nothing routes.",
 }
 
 # What the product is, for the "is this actually needed" section. Anything in
 # here is expected to be present; if it is not, that is a bug.
 PRODUCT = {
-    "video": ["ubuntustudio-video", "kdenlive", "blender", "obs-studio",
-              "vlc", "ffmpeg", "subtitleeditor", "synfigstudio", "qprompt",
-              "xjadeo", "devede", "k3b", "libmlt7", "libopenimageio2.5",
-              "libqt6multimedia6"],
+    "graphics": ["ubuntustudio-graphics", "gimp", "inkscape", "krita",
+                 "blender", "mypaint", "pencil2d", "pikopixel.app",
+                 "skanpage", "synfigstudio", "kcolorchooser", "libmlt7",
+                 "libmlt++7", "libopenimageio2.5", "libqt6multimedia6"],
     "realtime": ["linux-image-realtime", "pipewire", "wireplumber",
                  "pipewire-jack"],
 }
@@ -200,16 +201,16 @@ def main():
                 print(n)
         return 0
 
-    print("# What PuralvOS Video carries")
+    print("# What PuralvOS Graphics carries")
     print()
     print("Measured from `%s`, not from a list somebody wrote down." % args.root)
     print()
     print("Every package here is a stock, signed package from an upstream "
           "archive, at the version that archive publishes. PuralvOS builds, "
-          "patches and forks no packages. The video branch ships the "
-          "`ubuntustudio-video` task and `linux-realtime`; the audio and "
-          "graphics application sets are removed. TONE3000, which belongs to "
-          "the audio branch, is not in this image.")
+          "patches and forks no packages. The graphics branch ships the "
+          "`ubuntustudio-graphics` task and `linux-realtime`; the audio and "
+          "video application sets are removed. TONE3000, which belongs to the "
+          "audio branch, is not in this image.")
     print()
     print("## Totals")
     print()
@@ -290,14 +291,16 @@ def main():
     print("| `firefox` | from packages.mozilla.org, NOT the Ubuntu archive copy. "
           "The archive's is `1:1snap1`, a wrapper whose only job is installing "
           "the snap. See `apt/mozilla.sources`. |")
-    print("| `kdenlive` | the timeline editor. It is the reason the video task "
-          "exists, and it is also the package that makes the accounts and ML "
-          "trims unsafe. |")
+    print("| `gimp` | the raster editor. It links `libgs10`, so the "
+          "Ghostscript libraries stay even though the document viewers do "
+          "not. |")
+    print("| `krita` | digital painting and animation. It needs `libmlt7` and "
+          "`libmlt++7`, so the video front end goes but the MLT runtime stays. |")
     print("| `blender` | modelling, animation and compositing. It pulls the "
-          "OpenImageIO/OpenCV/GDAL chain, which is why the geometry trim is "
-          "disabled on this branch. |")
-    print("| `obs-studio` | capture and streaming. The video task's other "
-          "headline application. |")
+          "OpenImageIO/OpenCV/GDAL chain, which is why the geometry and ML "
+          "trims are disabled on this branch. |")
+    print("| `inkscape` | vector illustration. It shares the GIMP/GTK runtime "
+          "and is one of the task's headline applications. |")
     print()
 
     print("## Do not remove these")

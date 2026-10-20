@@ -13,7 +13,7 @@
 #   pkg   an individual package. Checked as installed. A miss is
 #         a build failure.
 
-ubuntustudio-video=meta
+ubuntustudio-graphics=meta
 ubuntustudio-lowlatency-settings=pkg
 ubuntustudio-performance-tweaks=pkg
 ubuntustudio-default-settings=pkg

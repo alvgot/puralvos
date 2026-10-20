@@ -22,7 +22,7 @@
 # and the run ends with one summary line, so a build can grep a single line
 # and decide whether the image is good.
 #
-# Run it on the base as well as on PuralvOS. If Kdenlive misbehaves after
+# Run it on the base as well as on PuralvOS. If Krita misbehaves after
 # stripping and the base was never measured, a day disappears blaming work
 # that did not cause it.
 
@@ -185,8 +185,8 @@ LdyLocale="$(sed -n 's/^LANG=\(.*\)$/\1/p' /etc/default/locale 2>/dev/null | hea
 # Run a command the way the menu would.
 #
 # The desktop is the user's session, so applications have to be tested as the
-# user: Kdenlive and VLC both refuse to run as root, and testing them as root
-# would report two perfectly good applications as broken.
+# user: several desktop applications refuse to start as root, and testing them
+# as root would report a perfectly good application as broken.
 as_desktop() {
 	setpriv --reuid="$PurUid" --regid="$PurGid" --init-groups \
 		env \
@@ -1048,30 +1048,31 @@ launch_test() {
 	return 1
 }
 
-# The curated set from tasks.list, and only that: video.
-# Nothing here is a general desktop application, because PuralvOS Video does
-# not ship them. A menu entry that tests a stripped application is a false
-# failure.
+# The curated set from tasks.list, and only that: graphics.
+# Nothing here is a general desktop application, because PuralvOS Graphics
+# does not ship them. A menu entry that tests a stripped application is a
+# false failure.
 #
-# This list mirrors tasks.list. Every entry below is in ubuntustudio-video.
-# Audio and graphics applications are deliberately absent: the audio and
-# graphics task bundles are removed by tools/build-live.sh, so testing them
-# would only produce SKIP lines.
+# This list mirrors tasks.list. Every entry below is in ubuntustudio-graphics.
+# Audio and video applications are deliberately absent: the audio and video
+# task bundles are removed by tools/build-live.sh, so testing them would only
+# produce SKIP lines.
 #
 # The menu sweep below still walks every remaining application entry, so a
-# video tool that is installed but broken is reported even if it is not named
-# here.
+# graphics tool that is installed but broken is reported even if it is not
+# named here.
 TESTS=(
-# video
-"kdenlive:kdenlive"
+# graphics
+"gimp:gimp"
+"inkscape:inkscape"
+"krita:krita"
 "blender:blender"
-"obs:obs"
-"subtitleeditor:subtitleeditor"
-"vlc:vlc --intf qt"
+"mypaint:mypaint"
+"pencil2d:pencil2d"
+"pikopixel:PikoPixel"
+"skanpage:skanpage"
 "synfig:synfigstudio"
-"qprompt:qprompt"
-"xjadeo:xjadeo"
-"kdenlive-effects:kdenlive"
+"kcolorchooser:kcolorchooser"
 )
 
 for t in "${TESTS[@]}"; do
@@ -1152,10 +1153,11 @@ console_test() {
 	fi
 }
 
-# The console programs that belong to the product: video.
+# The console programs that belong to the product: graphics.
 #
-# The audio and graphics console tools are not part of this image. The menu
-# sweep above still reaches any application entry that remains installed.
+# ffmpeg stays because Krita, Pencil2D and ImageMagick use it as a runtime.
+# The audio and video console applications are not part of this image. The
+# menu sweep above still reaches any application entry that remains installed.
 for t in "ffmpeg:ffmpeg -version" \
 	 "ffprobe:ffprobe -version" \
 	 "display:display -version"; do

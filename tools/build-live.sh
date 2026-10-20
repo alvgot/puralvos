@@ -1,5 +1,5 @@
 #!/bin/bash
-# build-live.sh - build the PuralvOS Video live image from the stock Ubuntu
+# build-live.sh - build the PuralvOS Graphics live image from the stock Ubuntu
 # Studio ISO.
 #
 # Standard tools throughout, per docs/STANDARD-TOOLS.md: unsquashfs/mksquashfs
@@ -28,8 +28,8 @@
 #   2. Our branding: wallpapers, the mark, os-release, boot menu.
 #   3. The real time limits file, which no package installs by itself.
 #   4. A first boot hook that puts the live user in the audio and video groups.
-#   5. Removal of the audio, graphics, photography and publishing tasks,
-#      leaving the video task and its runtime dependencies.
+#   5. Removal of the audio, video, photography and publishing tasks,
+#      leaving the graphics task and its runtime dependencies.
 #
 # Usage:
 #   build-live.sh [--keep] [--no-kernel] [--author-only]
@@ -63,8 +63,8 @@ say() { printf '\n=== %s\n' "$*"; }
 die() { printf 'build-live: %s\n' "$*" >&2; exit 1; }
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PRODUCT="PuralvOS Video"
-PRODUCT_SLUG="puralvos-video"
+PRODUCT="PuralvOS Graphics"
+PRODUCT_SLUG="puralvos-graphics"
 BASE_ISO="$REPO/base/ubuntustudio-26.10-desktop-amd64.iso"
 # The work directory needs room for the ISO, the unpacked layer and the chroot
 # all at once: about 40 GB. Pick a filesystem that has it rather than trusting
@@ -1101,14 +1101,16 @@ for f in "$FULL"/usr/share/plasma/layout-templates/org.puralvos.desktop.*/conten
 	sed -i -e '/org\.kde\.plasma\.pager/d' \
 	       -e '/org\.kde\.plasma\.minimizeall/d' \
 	       -e 's/,[[:space:]]*"applications:org\.kde\.discover\.desktop"//g' \
-	       -e 's/patchance\.desktop/blender.desktop/g' \
-	       -e 's/ardour\.desktop/vlc.desktop/g' \
-	       -e 's/org\.kde\.krita\.desktop/org.kitone.subtitleeditor.desktop/g' \
-	       -e 's/gimp\.desktop/org.synfig.SynfigStudio.desktop/g' \
-	       -e 's/org\.kde\.digikam\.desktop/xjadeo.desktop/g' \
-	       -e 's/org\.darktable\.darktable\.desktop/org.kde.k3b.desktop/g' \
+	       -e 's/org\.kde\.krita\.desktop/org.inkscape.Inkscape.desktop/g' \
+	       -e 's/gimp\.desktop/mypaint.desktop/g' \
+	       -e 's/patchance\.desktop/gimp.desktop/g' \
+	       -e 's/ardour\.desktop/org.kde.krita.desktop/g' \
+	       -e 's/com\.obsproject\.Studio\.desktop/blender.desktop/g' \
+	       -e 's/org\.kde\.kdenlive\.desktop/org.synfig.SynfigStudio.desktop/g' \
+	       -e 's/org\.kde\.digikam\.desktop/org.kde.kcolorchooser.desktop/g' \
+	       -e 's/org\.darktable\.darktable\.desktop/org.kde.skanpage.desktop/g' \
 	       -e 's/raysession\.desktop/blender.desktop/g' \
-	       -e 's/carla\.desktop/com.obsproject.Studio.desktop/g' \
+	       -e 's/carla\.desktop/gimp.desktop/g' \
 	       -e 's/"org\.kde\.plasma\.kicker"/"org.kde.plasma.kickerdash"/g' \
 	       -e 's#/usr/share/pixmaps/ubuntustudio-logo-menu\.png#/usr/share/pixmaps/puralvos-logo-menu.png#g' \
 	       -e 's/kickerdash\.writeConfig("customButtonImage", "app-launcher")/kickerdash.writeConfig("customButtonImage", "\/usr\/share\/pixmaps\/puralvos-logo-menu.png")/' \
@@ -1120,21 +1122,23 @@ if [ -f "$FULL/usr/sbin/ubuntustudio-panel-refresh" ]; then
 	       -e '/org\.kde\.plasma\.pager/d' \
 	       -e '/org\.kde\.plasma\.minimizeall/d' \
 	       -e 's/"applications:org\.kde\.discover\.desktop",[[:space:]]*//g' \
-	       -e 's/patchance\.desktop/blender.desktop/g' \
-	       -e 's/ardour\.desktop/vlc.desktop/g' \
-	       -e 's/org\.kde\.krita\.desktop/org.kitone.subtitleeditor.desktop/g' \
-	       -e 's/gimp\.desktop/org.synfig.SynfigStudio.desktop/g' \
-	       -e 's/org\.kde\.digikam\.desktop/xjadeo.desktop/g' \
-	       -e 's/org\.darktable\.darktable\.desktop/org.kde.k3b.desktop/g' \
+	       -e 's/org\.kde\.krita\.desktop/org.inkscape.Inkscape.desktop/g' \
+	       -e 's/gimp\.desktop/mypaint.desktop/g' \
+	       -e 's/patchance\.desktop/gimp.desktop/g' \
+	       -e 's/ardour\.desktop/org.kde.krita.desktop/g' \
+	       -e 's/com\.obsproject\.Studio\.desktop/blender.desktop/g' \
+	       -e 's/org\.kde\.kdenlive\.desktop/org.synfig.SynfigStudio.desktop/g' \
+	       -e 's/org\.kde\.digikam\.desktop/org.kde.kcolorchooser.desktop/g' \
+	       -e 's/org\.darktable\.darktable\.desktop/org.kde.skanpage.desktop/g' \
 	       -e 's/raysession\.desktop/blender.desktop/g' \
-	       -e 's/carla\.desktop/com.obsproject.Studio.desktop/g' \
+	       -e 's/carla\.desktop/gimp.desktop/g' \
 	       -e 's#/usr/share/pixmaps/ubuntustudio-logo-menu\.png#/usr/share/pixmaps/puralvos-logo-menu.png#g' \
 	       -e 's/"org\.kde\.plasma\.kicker"/"org.kde.plasma.kickerdash"/g' \
 	       -e 's/kickerdash\.writeConfig("customButtonImage", "app-launcher")/kickerdash.writeConfig("customButtonImage", "\/usr\/share\/pixmaps\/puralvos-logo-menu.png")/' \
 	       -e 's/\(kicker\.writeConfig("customButtonImage", "\/usr\/share\/pixmaps\/puralvos-logo-menu\.png")\)/\1\nkicker.writeConfig("useCustomButtonImage", "true")/' \
 	       -e 's/^\(panel\.height = gridUnit \* [0-9.]*\)$/\1\npanel.opacity = "opaque"/' \
 		"$FULL/usr/sbin/ubuntustudio-panel-refresh"
-	echo "  panel builder: menu applet repointed to kickerdash, video launchers pinned, pager/show-desktop/discover dropped"
+	echo "  panel builder: menu applet repointed to kickerdash, graphics launchers pinned, pager/show-desktop/discover dropped"
 fi
 
 # The kept theme's own layout script still points its two desktop
@@ -2208,9 +2212,9 @@ fi
 #     containing darktable, digikam, hugin and the rest of the audio/video/
 #     graphics stack, because they are in the ubuntustudio metapackages'
 #     dependency chain and apt takes the chain with them. What actually
-#     happens to that stack is decided list by list in the video trim below;
+#     happens to that stack is decided list by list in the graphics trim below;
 #     the generic kernel is unshipped at repack time, by file.
-say "removing the non-video task bundles"
+say "removing the non-graphics task bundles"
 purge_in_chroot() {
 	local p
 	for p in "$@"; do
@@ -2220,80 +2224,102 @@ purge_in_chroot() {
 			head -3 | sed 's/^/  /' || true
 	done
 }
-purge_in_chroot ubuntustudio-audio ubuntustudio-photography \
-	ubuntustudio-publishing ubuntustudio-graphics
+purge_in_chroot ubuntustudio-audio ubuntustudio-video \
+	ubuntustudio-photography ubuntustudio-publishing
 
 # --------------------------------------------------------------------------
-# the video trim
+# the graphics trim
 # --------------------------------------------------------------------------
-# tasks.list decides what this product ships. The lists in tools/video-trim
+# tasks.list decides what this product ships. The lists in tools/graphics-trim
 # decide what the stock image leaked in and the product does not ship anyway.
 # Active lists are applied in numeric order; a *.list.disabled file is kept
 # with its reason and is not applied.
 #
-# This branch starts from the audio branch's batches where the batch is not
+# This branch starts from the video branch's batches where the batch is not
 # product-specific, and changes the ones that are:
 #
-#   02-audio.list       was 02-video-optical.list. It removes the audio apps
-#                       instead of the video apps, so kdenlive, melt, MLT and
-#                       subtitleeditor stay.
-#   03-graphics.list    keeps ImageMagick, because devede and synfig depend on
-#                       it. The list still removes GIMP, Krita, Inkscape and
-#                       the photography stack.
-#   07-online-accounts  disabled. kdenlive depends on libkf6purpose-bin, which
-#                       depends on libkaccounts6-2; removing the accounts
-#                       stack takes kdenlive and melt with it.
+#   02-audio.list       removes the audio applications. PipeWire, WirePlumber
+#                       and the JACK library stay; Synfig and the graphics
+#                       apps use them for preview audio.
+#   02-video-optical.list
+#                       removes the video editors and disc tools. It keeps
+#                       libmlt7, libmlt++7 and libmlt-data because Krita and
+#                       Synfig use MLT, and it keeps ffmpeg because Krita,
+#                       Pencil2D and ImageMagick depend on it.
+#   03-graphics.list    disabled. This is the product bundle, not a trim.
+#
+#   05-documents.list   active, but reduced to the document viewers. The
+#                       poppler libraries, Ghostscript and the font package
+#                       stay because GIMP, Inkscape, Krita and Skanpage link
+#                       them.
+#   10-gnustep.list     disabled. PikoPixel is a GNUstep application, and the
+#                       batch would remove its runtime with the rest of
+#                       GNUstep.
+#   07-online-accounts  disabled. Skanpage depends on
+#                       qml6-module-org-kde-purpose, which depends on
+#                       libkaccounts6-2; removing the accounts stack would
+#                       take the scanner application with it.
 #   11-geo              disabled. GDAL is a hard dependency of OpenCV's
 #                       imgcodecs, which libopenimageio depends on, which
 #                       Blender depends on.
-#   12-ml              disabled. kdenlive needs gstreamer1.0-plugins-bad, and
-#                       that package depends on the TensorFlow, ONNX and
-#                       OpenVINO runtime the ML batch would remove.
+#   12-ml              disabled. Krita and MLT need the OpenCV/ONNX/TensorFlow
+#                       runtime the ML batch would remove.
 #
 # The disabled files stay in the tree because they record the measured
 # collisions; deleting them would invite the next person to re-apply the
-# audio branch's list and break the video apps.
+# video branch's list and break the graphics applications.
 #
 # The command is:
 #
 #	apt-get purge -y --auto-remove <names in the list>
 #
 # Each batch writes $WORK/purge-<list>.log and prints how many packages it
-# removed. This is a trim, not a sweep: the desktop, the video applications
+# removed. This is a trim, not a sweep: the desktop, the graphics applications
 # and the PipeWire/JACK runtime are marked manual before any of this runs, so
 # autoremove can never reach them no matter what a future list says.
-say "protecting the video stack"
+say "protecting the graphics stack"
 # shellcheck disable=SC2086
 #
-# xserver-xorg-core is in this list even though it is not video: purging the
-# audio, graphics and photography task bundles orphans it. It is desktop
-# infrastructure, and the X11 sessions SDDM offers depend on it.
+# xserver-xorg-core is in this list even though it is not a graphics app:
+# purging the audio, video and photography task bundles orphans it. It is
+# desktop infrastructure, and the X11 sessions SDDM offers depend on it.
 #
 # Dolphin cannot be saved with a mark: it shares the baloo/kio widgets with
 # okular, and the documents batch resolves the whole chain into one purge
 # transaction. It is the file manager the panel pins, so it is installed back
 # after the trim, next to Firefox.
 #
-# The Blender runtime libraries are marked explicitly because 12-ml-video.list
-# removes the rest of the ML stack, and a future autoremove must not be able to
-# reinterpret them as orphaned when a list changes.
+# The Blender, OpenCV and GDAL libraries are marked explicitly because the
+# geo and ML batches are disabled today and a future autoremove must not be
+# able to reinterpret them as orphaned when a list changes.
 chroot "$FULL" apt-mark manual \
-	ubuntustudio-video ubuntustudio-pipewire-config \
-	kdenlive kdenlive-data melt libmlt7 libmlt++7 libmlt-data \
-	blender blender-data obs-studio obs-plugins libobs0t64 \
-	obs-pipewire-audio-capture ffmpeg vlc vlc-plugin-pipewire \
-	subtitleeditor synfigstudio qprompt xjadeo devede k3b libk3b8t64 \
-	imagemagick osspd \
-	pipewire wireplumber pipewire-jack libjack-jackd2-0 \
+	ubuntustudio-graphics ubuntustudio-fonts ubuntustudio-pipewire-config \
+	gimp gimp-data gimp-data-extras gir1.2-gimp-3.0 libgimp-3.0-0 \
+	inkscape lib2geom1.4.0 \
+	krita krita-data \
+	mypaint mypaint-data mypaint-data-extras mypaint-brushes \
+	libmypaint-1.5-1 libmypaint-common \
+	pencil2d pikopixel.app skanpage libksanecore6-1 \
+	synfigstudio kcolorchooser create-resources openclipart-svg \
+	blender blender-data xserver-xorg-input-wacom \
+	libmlt7 libmlt++7 libmlt-data \
+	imagemagick imagemagick-7-common imagemagick-7.q16 \
+	libmagick++-7.q16-5 libmagickcore-7.q16-10 \
+	libmagickcore-7.q16-10-extra libmagickwand-7.q16-10 \
+	ffmpeg libgs10 ghostscript gsfonts \
 	libembree4-4 libimath-3-1-29t64 libopencolorio2.5 \
 	libopenexr-3-4-33 libopenimageio2.5 libopenvdb10.0t64 \
 	libopenxr-loader1 libshaderc1 \
+	libgdal39 libproj25 libgeotiff5 \
+	libopencv-contrib410 libopencv-core410 libopencv-imgproc410 \
+	libopencv-video410 libopencv-imgcodecs410 \
+	pipewire wireplumber pipewire-jack libjack-jackd2-0 \
 	plasma-desktop plasma-workspace sddm systemsettings \
 	xserver-xorg-core >/dev/null
 
-say "removing the video trim"
+say "removing the graphics trim"
 TRIM_REMOVED=0
-for TRIMFILE in "$REPO"/tools/video-trim/*.list; do
+for TRIMFILE in "$REPO"/tools/graphics-trim/*.list; do
 	mapfile -t TRIMNAMES < <(grep -vE '^[[:space:]]*(#|$)' "$TRIMFILE")
 	[ "${#TRIMNAMES[@]}" -gt 0 ] || continue
 	TRIMLOG="$WORK/purge-$(basename "$TRIMFILE" .list).log"
@@ -3388,7 +3414,7 @@ done
 GRUB_HOST_VER=$(grub_module_version /usr/lib/grub/x86_64-efi)
 echo "  grub: ISO tree modules pinned to the build machine's GRUB ${GRUB_HOST_VER:-unknown}"
 
-grub-mkrescue -o "$ISOUT" -volid "PURALVOS_VIDEO" "$WORK/iso/" 2>&1 \
+grub-mkrescue -o "$ISOUT" -volid "PURALVOS_GRAPHICS" "$WORK/iso/" 2>&1 \
 	| grep -viE '^xorriso|^libisofs|^Drive |^Media |^Added to|^ISO image produced|^Writing to' \
 	| tail -4 | sed 's/^/  /'
 

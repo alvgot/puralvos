@@ -1,3 +1,10 @@
+# Graphics trim, batch 10: disabled because PikoPixel is a GNUstep application.
+#
+# The graphics product ships pikopixel.app. Purging the GNUstep runtime takes
+# PikoPixel with it, so this batch is retained as a record but is not applied.
+# If PikoPixel is ever dropped from tasks.list, enable this list and re-check
+# the graphics anchors.
+
 # Video trim, batch 10 of 12: GNUstep.
 #
 # Vetted list. tools/build-live.sh applies these files in numeric order with:

@@ -1,0 +1,37 @@
+# Graphics trim, batch 02b: video editing, capture, disc burning and optical
+# media. The video applications are not part of this product.
+#
+# Krita depends on libmlt7 and libmlt++7 for its animation timeline, so the
+# MLT libraries and libmlt-data stay. Only the kdenlive front end and the
+# melt command are removed here; do not add the libraries to this list.
+#
+# ffmpeg stays as well. Krita, Pencil2D and ImageMagick depend on it, so it is
+# a graphics runtime in this image even though it is a video tool by name.
+
+kdenlive
+kdenlive-data
+melt
+mplayer
+ffmpegthumbs
+subtitleeditor
+libsubtitleeditor0
+devede
+dvd+rw-tools
+dvdauthor
+vcdimager
+wodim
+genisoimage
+cdrdao
+k3b
+k3b-data
+libk3b8t64
+libk3b-extracodecs
+obs-studio
+obs-plugins
+libobs0t64
+obs-pipewire-audio-capture
+vlc
+vlc-plugin-pipewire
+xjadeo
+harvid
+qprompt
