@@ -1,11 +1,11 @@
-# Audio-only trim, batch 10 of 12: GNUstep.
+# Video trim, batch 10 of 12: GNUstep.
 #
 # Vetted list. tools/build-live.sh applies these files in numeric order with:
 #
 #     apt-get purge -y --auto-remove <the names below>
 #
 # The order is part of the verification: this working copy was purged with
-# these batches in this order, and the audio anchors were checked after
+# these batches in this order, and the video anchors were checked after
 # every batch. Do not merge or reorder the files.
 #
 # Zero removals: the stack was already gone as collateral of batch 3. Kept for the record.

@@ -72,14 +72,14 @@ RULES = [
      "A GTK front end for apt. apt is the package manager and it stays."),
 
     ("photography", r"^darktable$",
-     "Photography. Not in the product: audio, video, graphics."),
+     "Photography. Not in the video product."),
 
     ("mDNS", r"^avahi",
      "7 packages of Zeroconf/mDNS service discovery. Useful for a network "
      "workstation with shared speakers, useless otherwise."),
 
     ("web", r"^firefox$",
-     "A general web browser on a machine that already has one job. Ardour "
+     "A general web browser on a machine that already has one job. Kdenlive "
      "and VLC will open URLs without it."),
 
     ("evolution", r"^evolution-data-server",
@@ -111,26 +111,21 @@ PROTECTED = {
     "avahi-daemon": "may be wanted for network audio discovery; decide once, "
                      "not by accident.",
     "python3-dbus": "everything on the desktop talks over D-Bus.",
-    "pipewire": "the audio server. This is the product.",
+    "pipewire": "the audio server. Video playback, capture and editing all "
+                "route through it; removing it breaks Kdenlive and OBS.",
     "wireplumber": "PipeWire's session manager. Without it nothing routes.",
-    "jackd2": "JACK, for real time audio clients that do not use PipeWire.",
 }
 
 # What the product is, for the "is this actually needed" section. Anything in
 # here is expected to be present; if it is not, that is a bug.
 PRODUCT = {
-    "audio": ["ubuntustudio-audio", "pipewire", "wireplumber", "jackd2",
-              "ardour", "audacity", "mixxx", "qjackctl", "ffmpeg",
-              "libasound2t64", "musescore3"],
-    "video": ["ubuntustudio-video", "kdenlive", "shotcut", "olive-editor",
-              "openshot-qt", "pitivi", "blender", "obs-studio", "vlc",
-              "handbrake", "subtitleeditor", "libmlt7", "libqt6multimedia6"],
-    "graphics": ["ubuntustudio-graphics", "gimp", "inkscape", "krita",
-                 "scribus", "freecad", "openscad", "mypaint"],
-    "realtime": ["linux-image-realtime", "jackd2", "pipewire-jack",
-                 "libasound2-plugins"],
+    "video": ["ubuntustudio-video", "kdenlive", "blender", "obs-studio",
+              "vlc", "ffmpeg", "subtitleeditor", "synfigstudio", "qprompt",
+              "xjadeo", "devede", "k3b", "libmlt7", "libopenimageio2.5",
+              "libqt6multimedia6"],
+    "realtime": ["linux-image-realtime", "pipewire", "wireplumber",
+                 "pipewire-jack"],
 }
-
 
 def read_status(root):
     path = os.path.join(root, "var", "lib", "dpkg", "status")
@@ -176,12 +171,15 @@ def main():
         if hits:
             removals[category] = (hits, reason)
 
-    # Never propose something on the protected list.
+    # Never propose something on the protected list, and do not print an
+    # empty category when protection removed every hit (mDNS was one).
     for protected in PROTECTED:
         for category in list(removals):
             removals[category] = (
                 [n for n in removals[category][0] if n != protected],
                 removals[category][1])
+    removals = collections.OrderedDict(
+        (k, v) for k, v in removals.items() if v[0])
 
     total_candidates = sum(len(h) for h, _ in removals.values())
 
@@ -202,9 +200,16 @@ def main():
                 print(n)
         return 0
 
-    print("# What PuralvOS carries")
+    print("# What PuralvOS Video carries")
     print()
     print("Measured from `%s`, not from a list somebody wrote down." % args.root)
+    print()
+    print("Every package here is a stock, signed package from an upstream "
+          "archive, at the version that archive publishes. PuralvOS builds, "
+          "patches and forks no packages. The video branch ships the "
+          "`ubuntustudio-video` task and `linux-realtime`; the audio and "
+          "graphics application sets are removed. TONE3000, which belongs to "
+          "the audio branch, is not in this image.")
     print()
     print("## Totals")
     print()
@@ -285,9 +290,14 @@ def main():
     print("| `firefox` | from packages.mozilla.org, NOT the Ubuntu archive copy. "
           "The archive's is `1:1snap1`, a wrapper whose only job is installing "
           "the snap. See `apt/mozilla.sources`. |")
-    print("| `libreoffice-*` | Alv and Puria write things. 21 packages is not "
-          "worth saving; snap was 4 GB and this is the trim talking about the "
-          "wrong thing. |")
+    print("| `kdenlive` | the timeline editor. It is the reason the video task "
+          "exists, and it is also the package that makes the accounts and ML "
+          "trims unsafe. |")
+    print("| `blender` | modelling, animation and compositing. It pulls the "
+          "OpenImageIO/OpenCV/GDAL chain, which is why the geometry trim is "
+          "disabled on this branch. |")
+    print("| `obs-studio` | capture and streaming. The video task's other "
+          "headline application. |")
     print()
 
     print("## Do not remove these")

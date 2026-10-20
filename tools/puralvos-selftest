@@ -22,7 +22,7 @@
 # and the run ends with one summary line, so a build can grep a single line
 # and decide whether the image is good.
 #
-# Run it on the base as well as on PuralvOS. If Ardour misbehaves after
+# Run it on the base as well as on PuralvOS. If Kdenlive misbehaves after
 # stripping and the base was never measured, a day disappears blaming work
 # that did not cause it.
 
@@ -185,7 +185,7 @@ LdyLocale="$(sed -n 's/^LANG=\(.*\)$/\1/p' /etc/default/locale 2>/dev/null | hea
 # Run a command the way the menu would.
 #
 # The desktop is the user's session, so applications have to be tested as the
-# user: Ardour and VLC both refuse to run as root, and testing them as root
+# user: Kdenlive and VLC both refuse to run as root, and testing them as root
 # would report two perfectly good applications as broken.
 as_desktop() {
 	setpriv --reuid="$PurUid" --regid="$PurGid" --init-groups \
@@ -1048,67 +1048,29 @@ launch_test() {
 	return 1
 }
 
-# The curated set from tasks.list, and only that: audio, video, graphics.
-# Nothing here is a general desktop application, because PuralvOS does not ship
-# them. A menu entry that tests a stripped application is a false failure.
+# The curated set from tasks.list, and only that: video.
+# Nothing here is a general desktop application, because PuralvOS Video does
+# not ship them. A menu entry that tests a stripped application is a false
+# failure.
 #
-# This list mirrors tasks.list. Every entry below is in ubuntustudio-audio,
-# ubuntustudio-video or ubuntustudio-graphics.
+# This list mirrors tasks.list. Every entry below is in ubuntustudio-video.
+# Audio and graphics applications are deliberately absent: the audio and
+# graphics task bundles are removed by tools/build-live.sh, so testing them
+# would only produce SKIP lines.
 #
-# What used to be here and is not, each with why:
-#
-#   amsn          an instant messenger. Not a discipline; a general desktop
-#                 application that came along with the base.
-#   pocketsphinx  a speech recognition demo.
-#   yatm          a network traffic meter.
-#   harmonoid     a metronome from ubuntu-edu-music, which tasks.list leaves out
-#                 until PuralvOS has an education story. kmetronome stays: it
-#                 is in the image as an audio tool, and a metronome is
-#                 something an audio workstation uses.
-#   darktable     photography, and publishing. tasks.list excludes
-#   rawtherapee   ubuntustudio-photography and ubuntustudio-publishing on
-#   mypaint       purpose, so listing them here bought three "not installed"
-#   scribus       SKIP lines on every boot. Noise, not signal.
-#
-# No entry here is a game and none lives in /usr/games, because PuralvOS ships
-# no games. That directory exists in the image and is empty: dpkg creates it and
-# nothing in this product ever puts anything in it.
+# The menu sweep below still walks every remaining application entry, so a
+# video tool that is installed but broken is reported even if it is not named
+# here.
 TESTS=(
-# audio
-"ardour:ardour"
-"jackdbus:jack_control"
-"qjackctl:qjackctl"
-"mixxx:mixxx"
-"audacity:audacity"
-"kid3:kid3"
-"musescore:musescore3"
-"musescore4:musescore4"
-"rose:rose"
-"tuxguitar:tuxguitar"
-"kmetronome:kmetronome"
-"kmix:kmix"
-"pavucontrol:pavucontrol"
 # video
 "kdenlive:kdenlive"
-"shotcut:shotcut"
-"olive:olive-editor"
-"openshot:openshot-qt"
-"pitivi:pitivi"
 "blender:blender"
 "obs:obs"
-"butt:butt"
 "subtitleeditor:subtitleeditor"
-"ffmpeg:ffmpeg"
 "vlc:vlc --intf qt"
-"handbrake:handbrake"
-"kazam:kazam"
-"stopmotion:stopmotion"
-# graphics
-"gimp:gimp"
-"inkscape:inkscape"
-"krita:krita"
-"freecad:freecad"
-"openscad:openscad"
+"synfig:synfigstudio"
+"qprompt:qprompt"
+"xjadeo:xjadeo"
 "kdenlive-effects:kdenlive"
 )
 
@@ -1190,19 +1152,13 @@ console_test() {
 	fi
 }
 
-# The console programs that belong to the product: audio, video, graphics.
+# The console programs that belong to the product: video.
 #
-# weechat and cmail were in this list. They are an IRC client and a mail reader,
-# which is neither audio, video nor graphics, and tasks.list excludes the general
-# desktop applications they arrived with. The menu sweep above still reaches
-# them if they are still installed, so dropping them here does not hide them.
-#
-# pamix is a curses mixer: it draws on a terminal and never opens a window, so
-# it is checked here and not with the graphical applications.
-for t in "timidity:timidity -h" \
-	 "alsamixer:alsamixer -h" \
-	 "display:display -version" \
-	 "pamix:pamix -h"; do
+# The audio and graphics console tools are not part of this image. The menu
+# sweep above still reaches any application entry that remains installed.
+for t in "ffmpeg:ffmpeg -version" \
+	 "ffprobe:ffprobe -version" \
+	 "display:display -version"; do
 	n=${t%%:*}; c=${t#*:}
 	bin=${c%% *}
 	if ! binary_present "$bin"; then

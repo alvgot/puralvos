@@ -1,0 +1,17 @@
+# Machine-learning and computer-vision runtime, minus everything Blender
+# needs. The audio branch's 12-ml.list also removes Embree, Imath, OpenColorIO,
+# OpenEXR, OpenImageIO, OpenVDB and OpenXR; those are direct Blender
+# dependencies and must stay on a video workstation.
+#
+# Keep out of this list: libembree4-4, libimath-3-1-29t64,
+# libopencolorio2.5, libopenexr-3-4-33, libopenimageio2.5,
+# libopenvdb10.0t64, libopenxr-loader1, and every libopencv-* package: MLT
+# and OpenImageIO depend on the OpenCV stack through libmlt7 and Blender.
+opencv-data
+libtensorflow-lite2.14.1
+libonnx1l
+libonnxruntime-providers
+libonnxruntime1.23
+libxnnpack0.20241108
+libdnnl3.6
+libopenni2-0

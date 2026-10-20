@@ -434,4 +434,57 @@ rebuilt with the same package lists. What the rebase forced:
   478 in 01), 2552 installed, boots to the branded Plasma desktop with the
   audio stack intact.
 - The family is four images from this harness: audio, graphics, video and the
-  full merged one; this branch builds the audio ISO.
+  full merged one. The `audio-only` branch builds the audio ISO; the
+  `video-only` branch and its record are described below.
+
+
+---
+
+## 8. The video-only branch (2026-10-20)
+
+`video-only` was cut from `audio-only` at `349921d`. The product is
+`ubuntustudio-video` plus `linux-realtime`, with the audio and graphics
+applications removed and the audio runtime kept for Kdenlive, OBS and playback.
+
+What this branch changed:
+
+- rewrote `tasks.list` for video and regenerated the package declaration;
+- renamed `tools/audio-trim` to `tools/video-trim`, replaced the audio-oriented
+  `02-video-optical.list` with a `02-audio.list`, and renamed the ML batch;
+- disabled three batches after an apt dependency audit, because removing them
+  takes product packages with them:
+  - `07-online-accounts`: Kdenlive → `libkf6purpose-bin` → `libkaccounts6-2`
+  - `11-geo`: Blender → OpenImageIO → OpenCV → GDAL
+  - `12-ml-video`: MLT → OpenCV, and Kdenlive → GStreamer bad →
+    ONNX/TensorFlow/OpenNI
+- removed TONE3000 from the build, rebranded os-release, issue, GRUB, panel,
+  ISO name and volume label for PuralvOS Video, and pinned the video
+  applications in both panel layouts;
+- converted the self test to the video launch set and FFmpeg/ffprobe/display
+  checks;
+- fixed Devede's `Exec`/`TryExec` (`/usr/bin/devede` → `/usr/bin/devede_ng`),
+  which had hidden DevedeNG as a dead launcher;
+- fixed `PURALVOS_SELFTEST=1` so it actually enables the self-test unit; before
+  this it only added the kernel argument and the disabled unit never ran.
+
+Production build:
+
+```
+ISO       out/puralvos-video-20261020-0239.iso   6.57 GB
+sha256    a3d1f76b466a864f031eddf2dd07639802af7e509c7d09da1be61e217c68a219
+packages  2377
+kernel    7.3.0-9-realtime (PREEMPT_RT)
+desktop   PURALVOS_DESKTOP_READY 22.69 (KVM, unthrottled)
+audit     dpkg --audit clean
+```
+
+The verification build ran the full in-guest self test: **88 pass, 13 fail,
+1 slow, 17 skip** in 628 s. The failures are all environment or first-run
+timeouts: QEMU has no GPU, polkit has no controlling tty, the 60 s window
+probe is shorter than Blender/Subtitle Editor/Synfig's first start, and a few
+system menu entries are not video applications. The same boot's screenshots
+show Blender and Subtitle Editor open; a clean Xvfb run opens Synfig in under
+five seconds. The full table is in [VIDEO.md](VIDEO.md).
+
+The audio branch's 90 s boot-gap investigation is unchanged and still waiting
+on the new audio ISO's `boot-report.txt`. The graphics-only branch is next.

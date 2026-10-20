@@ -32,7 +32,7 @@ def main():
     source = args.iso or "the most recent built image"
     sys.stdout.write(f"""# Installed packages
 
-The complete package list of the PuralvOS live image: name and version, one
+The complete package list of the PuralvOS Video live image: name and version, one
 per line, tab separated and sorted, so it stays greppable.
 
     grep '^linux-image' docs/PACKAGES-INSTALLED.md

@@ -18,8 +18,8 @@
 # Only one kernel boots a PuralvOS machine: the real time one. The general
 # kernel comes in as a dependency of the desktop metapackages and as the
 # default on the installation media, and leaving both installed means the
-# machine might boot the wrong one after a routine upgrade, which for an audio
-# workstation is a latency regression nobody would notice until a show.
+# machine might boot the wrong one after a routine upgrade, which for a media
+# workstation is a latency regression nobody would notice until a session.
 #
 # The order matters. linux-lowlatency is installed in tasks.list FIRST, then
 # the general kernel is removed. Removing first would let apt decide to keep
@@ -40,13 +40,13 @@ linux-headers-generic-hwe-26.10-edge
   # LibreOffice is REMOVED. This section used to say the opposite, on the
   # argument that both people who use this machine write things and a
   # workstation that cannot open a .odt or a .docx has a papercut in it every
-  # day. That argument was reasonable and it lost anyway: the audio-only
-  # image does not ship LibreOffice. The reversal is recorded, not silently
-  # edited, so that the next person can tell a reconsidered decision from one
-  # that was never made.
+  # day. That argument was reasonable and it lost anyway: the video image
+  # does not ship LibreOffice. The reversal is recorded, not silently edited,
+  # so that the next person can tell a reconsidered decision from one that was
+  # never made.
   #
   # The exact vetted package set is batch 04-libreoffice.list in
-  # tools/audio-trim, applied by tools/build-live.sh.
+  # tools/video-trim, applied by tools/build-live.sh.
 
 # --- packaging and app distribution ---------------------------------------
   #
@@ -157,51 +157,53 @@ puredata-data
 puredata-doc
 puredata-utils
 
-# --- the audio-only trim ---------------------------------------------------
+# --- the video trim --------------------------------------------------------
 #
-# The stock image leaks in a general-purpose desktop; tools/audio-trim holds
-# the twelve vetted lists that take it back out. Each list was simulated and
-# then really purged in a reconstructed working copy, in order, with the
+# The stock image leaks in a general-purpose desktop; tools/video-trim holds
+# the vetted lists that take it back out. Each list was simulated and then
+# really purged in a reconstructed working copy, in order, with the video
 # anchors checked after every batch. build-live.sh applies them with
 # --auto-remove and a closing autoremove --purge.
 #
-# The lists are the execution record, batch by batch, with what each removed
-# in the build log; this file keeps the decisions that are NOT obvious from a
-# package name:
+# Three lists are deliberately disabled on this branch because their removals
+# take video product packages with them. They stay in the tree as
+# .list.disabled so the decision is visible:
 #
-#   * libsnapd-glib-2-1 was a candidate and is NOT removed: purging it
+#   * 07-online-accounts: kdenlive -> libkf6purpose-bin -> libkaccounts6-2.
+#   * 11-geo: blender -> libopenimageio2.5 -> libopencv-imgcodecs410 ->
+#     libgdal39.
+#   * 12-ml-video: libmlt7 -> libopencv-contrib410 and friends, and
+#     kdenlive -> gstreamer1.0-plugins-bad -> libonnxruntime1.23,
+#     libtensorflow-lite2.14.1, libopenni2-0.
+#
+# The lists are the execution record, batch by batch; this file keeps the
+# decisions that are NOT obvious from a package name:
+#
+#   * libsnapd-glib-2-1 is a candidate and is NOT removed: purging it
 #     simulates to a REMOVED list containing libspa-0.2-modules, which is
 #     libpipewire's plugin layer. libsnapd-qt-2-1 is gone, this one stays.
 #
-#   * evolution-data-server-common was a candidate and is NOT removed:
+#   * evolution-data-server-common is a candidate and is NOT removed:
 #     purging it takes bluez-obexd and then bluedevil, and Bluetooth audio
 #     gear must keep working out of the box.
 #
-#   * A GPU batch (libplacebo360, libshaderc1) was vetted and DROPPED:
-#     libplacebo360 is a hard dependency of ffmpeg, and the purge answered
-#     with ffmpeg, obs-studio, the ubuntustudio branding packages and the
-#     desktop in the REMOVED list. libshaderc1 still goes, as collateral of
-#     batch 11-geo (its only user there, blender, is in that batch).
+#   * libplacebo360 is a hard dependency of ffmpeg. A GPU batch that removed
+#     it answered with ffmpeg, obs-studio, the ubuntustudio branding packages
+#     and the desktop in the REMOVED list, so it stays.
 #
-#   * xjadeo and harvid are NOT removed: ardour-video-timeline depends on
-#     xjadeo, and xjadeo's video output goes through harvid. The video
-#     timeline is part of Ardour, so the pair stays.
+#   * xjadeo and harvid are NOT removed: xjadeo is a video product
+#     application, and its video output goes through harvid.
 #
-#   * gdb, gcc-15-base, gcc-16-base and the cpp chain (cpp, cpp-15,
-#     cpp-15-x86-64-linux-gnu, cpp-x86-64-linux-gnu) are NOT removed:
+#   * gdb, gcc-15-base, gcc-16-base and the cpp chain are NOT removed:
 #     plasma-workspace reaches cpp through x11-xserver-utils, and gcc-16-base
 #     is pinned by libgcc-s1. Purging them simulates to a REMOVED list with
 #     the desktop in it.
 #
-#   * libpoppler-qt5-1t64 and libpoppler156 are NOT removed: musescore3
-#     depends on them, and musescore3 is a Recommends of ubuntustudio-audio.
-#     The rest of the stack (the qt6 side, poppler-data, poppler-utils and
-#     the ghostscript chain) goes in batch 05.
+# ImageMagick is NOT removed even though the graphics applications are:
+# Devede and Synfig depend on it at runtime.
 #
-# What the trim costs is real and recorded rather than hidden: blender,
-# dolphin, krita, csound-plugins, kio-extras, tzdata-legacy, squashfs-tools,
-# cdparanoia and the ubuntustudio-desktop(-core) metapackages go as
-# collateral of a list or of --auto-remove. None of these is an anchor, and
-# the anchor set was verified after every batch. If one of them is wanted
-# back, it comes back by adding it to tasks.list, not by puncturing a batch
-# here.
+# The video anchors (kdenlive, blender, obs-studio, vlc, ffmpeg,
+# subtitleeditor, synfigstudio, qprompt, xjadeo, devede, k3b, melt, MLT,
+# OpenImageIO and the realtime kernel) were checked after every batch. Any
+# package wanted back comes back by adding it to tasks.list, not by puncturing
+# a batch here.

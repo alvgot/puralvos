@@ -1,5 +1,6 @@
 #!/bin/bash
-# build-live.sh - build the PuralvOS live image from the stock Ubuntu Studio ISO.
+# build-live.sh - build the PuralvOS Video live image from the stock Ubuntu
+# Studio ISO.
 #
 # Standard tools throughout, per docs/STANDARD-TOOLS.md: unsquashfs/mksquashfs
 # for the casper layer, apt in a chroot for the kernel and packages, grub.cfg
@@ -23,12 +24,12 @@
 #
 #   1. linux-realtime, the real PREEMPT_RT kernel from the Ubuntu archive.
 #      The stock ISO carries only linux-generic, so a PuralvOS live image that
-#      does not add this is a generic kernel wearing the name. This is the
-#      single most important thing in the build.
+#      does not add this is a generic kernel wearing the name.
 #   2. Our branding: wallpapers, the mark, os-release, boot menu.
-#   3. The real time audio limits file, which no package installs by itself.
-#   4. A first boot hook that puts the live user in the audio group.
-#   5. Removal of the photography and publishing tasks.
+#   3. The real time limits file, which no package installs by itself.
+#   4. A first boot hook that puts the live user in the audio and video groups.
+#   5. Removal of the audio, graphics, photography and publishing tasks,
+#      leaving the video task and its runtime dependencies.
 #
 # Usage:
 #   build-live.sh [--keep] [--no-kernel] [--author-only]
@@ -62,6 +63,8 @@ say() { printf '\n=== %s\n' "$*"; }
 die() { printf 'build-live: %s\n' "$*" >&2; exit 1; }
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PRODUCT="PuralvOS Video"
+PRODUCT_SLUG="puralvos-video"
 BASE_ISO="$REPO/base/ubuntustudio-26.10-desktop-amd64.iso"
 # The work directory needs room for the ISO, the unpacked layer and the chroot
 # all at once: about 40 GB. Pick a filesystem that has it rather than trusting
@@ -159,166 +162,6 @@ fix_desktop_entries() {
 		echo "  hidden '$name' (Exec '$bin')"
 	done
 	echo "  $hidden menu entr$( [ "$hidden" = 1 ] && echo y || echo ies ) hidden for a missing executable"
-}
-
-# The TONE3000 plugin, the one piece of the image that is a download.
-#
-# TONE3000 (tone3000.com) is the official free NAM player: it browses and
-# plays Neural Amp Modeler captures and impulse responses straight from the
-# catalogue. It is the reason this image can promise a guitar rig without a
-# DAW, so it ships as part of the audio set rather than as an optional extra.
-#
-# It is NOT a distribution package on this archive, which fixes every other
-# decision here:
-#
-#   * The payload is the Linux x64 release tarball from the project's own
-#     GitHub releases, pinned by version AND by sha256. A build that cannot
-#     fetch or verify it stops; it does not ship without the plugin.
-#
-#   * The official install.sh targets ~/.vst3, ~/.lv2, ~/.clap, ~/.local/bin
-#     and the user's XDG data dir. A live image installed for the user who
-#     boots it is the wrong shape: the plugin has to be on the system paths
-#     every host scans, so the formats go to /usr/lib/{vst3,lv2,clap} and the
-#     standalone to /usr/bin. Same files, same layout inside them, installed
-#     once for every user instead of once per user.
-#
-#   * Factory presets land in /etc/skel/.config/TONE3000/Presets/Factory, the
-#     same path the plugin's own installer writes into the home directory,
-#     seeded through skel because casper creates the live user from skel.
-#     A user who installs the system gets them the same way.
-#
-#   * The desktop entry's Exec must be absolute; the tarball's own installer
-#     says so in a comment and generates it at install time. This one is
-#     generated here the same way, for /usr/bin/TONE3000.
-#
-# The version is pinned rather than "latest" on purpose: a plugin update is a
-# change to the product and gets a build log line, not a silent fetch.
-T3K_VERSION="v0.0.12"
-T3K_SHA256="c45ea5d64e6eef991b14f1883a4249ed1a883253db1a9d9f0605e0540aba5fc7"
-T3K_TARBALL="TONE3000-${T3K_VERSION}-linux-x64.tar.gz"
-T3K_URL="https://github.com/tone-3000/tone3000-plugin/releases/download/${T3K_VERSION}/${T3K_TARBALL}"
-
-install_tone3000() {
-	say "TONE3000 plugin (the NAM player this image ships)"
-	local cache="$WORK/downloads" tar="$WORK/downloads/$T3K_TARBALL"
-	local tmp rel got
-	mkdir -p "$cache"
-
-	if [ -f "$tar" ]; then
-		echo "  using cached $T3K_TARBALL"
-	else
-		echo "  fetching $T3K_URL"
-		if command -v curl >/dev/null 2>&1; then
-			curl -fsSL --retry 3 -o "$tar.part" "$T3K_URL" \
-				|| die "could not download the TONE3000 plugin.
-     File:    $T3K_URL
-     The image is supposed to ship it, so this build stops here rather than
-     produce an image that silently misses its NAM player. Rerun when the
-     network allows, or drop the tarball at $tar by hand."
-		elif command -v wget >/dev/null 2>&1; then
-			wget -q -O "$tar.part" "$T3K_URL" \
-				|| die "could not download the TONE3000 plugin (wget). See $T3K_URL"
-		else
-			die "neither curl nor wget is on this machine, so the TONE3000 plugin
-     cannot be fetched. Install one of them."
-		fi
-		mv "$tar.part" "$tar"
-	fi
-
-	got=$(sha256sum "$tar" | cut -d' ' -f1)
-	if [ "$got" != "$T3K_SHA256" ]; then
-		die "the TONE3000 tarball does not match the pinned checksum.
-     File:     $tar
-     Expected: $T3K_SHA256
-     Got:      $got
-     Delete the cached file and rerun if the download was interrupted; if the
-     checksum still differs, the release changed and T3K_VERSION/T3K_SHA256
-     in this script have to be updated together, deliberately."
-	fi
-	echo "  sha256 ok: $T3K_SHA256"
-
-	tmp=$(mktemp -d "$WORK/.t3k.XXXXXX")
-	tar -xzf "$tar" -C "$tmp" \
-		|| die "the TONE3000 tarball did not extract. The cached copy at $tar is corrupt."
-	rel=$(find "$tmp" -maxdepth 1 -mindepth 1 -type d | head -1)
-	[ -n "$rel" ] || { rm -rf "$tmp"; die "extracted TONE3000 tarball has no directory"; }
-	[ -d "$rel/TONE3000.vst3" ] && [ -d "$rel/TONE3000.lv2" ] \
-		&& [ -f "$rel/TONE3000.clap" ] && [ -f "$rel/TONE3000" ] \
-		|| { rm -rf "$tmp"; die "the TONE3000 tarball does not contain the VST3, LV2,
-     CLAP and standalone payload this step installs."; }
-
-	# VST3 and LV2 are bundles (directories); CLAP is a single shared object;
-	# the standalone is an executable. Same modes the official installer uses:
-	# CLAP 0644 because the loader dlopens it, not execs it.
-	rm -rf "$FULL/usr/lib/vst3/TONE3000.vst3" "$FULL/usr/lib/lv2/TONE3000.lv2"
-	install -d "$FULL/usr/lib/vst3" "$FULL/usr/lib/lv2" "$FULL/usr/lib/clap"
-	cp -a "$rel/TONE3000.vst3" "$FULL/usr/lib/vst3/"
-	cp -a "$rel/TONE3000.lv2" "$FULL/usr/lib/lv2/"
-	install -m 0644 "$rel/TONE3000.clap" "$FULL/usr/lib/clap/TONE3000.clap"
-	install -Dm0755 "$rel/TONE3000" "$FULL/usr/bin/TONE3000"
-	echo "  plugin formats: /usr/lib/vst3, /usr/lib/lv2, /usr/lib/clap (STD paths, every DAW scans them)"
-	echo "  standalone:     /usr/bin/TONE3000"
-
-	# Factory presets, in skel, exactly where the plugin's installer puts them
-	# in a home directory. Replace-don't-overlay like the official installer.
-	if compgen -G "$rel/factory-presets/*.t3kpreset" >/dev/null; then
-		install -d "$FULL/etc/skel/.config/TONE3000/Presets/Factory"
-		rm -f "$FULL/etc/skel/.config/TONE3000/Presets/Factory"/*.t3kpreset
-		install -m 0644 "$rel/factory-presets"/*.t3kpreset \
-			"$FULL/etc/skel/.config/TONE3000/Presets/Factory/"
-		echo "  factory presets: $(ls "$rel/factory-presets" | wc -l) -> /etc/skel/.config/TONE3000/Presets/Factory"
-	fi
-
-	# Desktop entry + icon, generated here for the /usr/bin path.
-	install -d "$FULL/usr/share/applications" \
-		"$FULL/usr/share/icons/hicolor/512x512/apps"
-	install -m 0644 "$rel/tone3000.png" \
-		"$FULL/usr/share/icons/hicolor/512x512/apps/tone3000.png"
-	cat > "$FULL/usr/share/applications/tone3000.desktop" <<'EOF'
-[Desktop Entry]
-Type=Application
-Name=TONE3000
-GenericName=NAM Amp and IR Player
-GenericName[de]=NAM-Verstärker- und IR-Player
-Comment=Play NAM captures and IRs straight from TONE3000
-Comment[de]=NAM-Captures und IRs direkt von TONE3000 spielen
-Exec=/usr/bin/TONE3000
-Icon=tone3000
-Terminal=false
-Categories=AudioVideo;Audio;Music;
-Keywords=NAM;guitar;bass;amp;ir;tone;
-StartupWMClass=TONE3000
-EOF
-	echo "  desktop entry: /usr/share/applications/tone3000.desktop"
-
-	# Pinned to the default panel's favourites, so "installed by default" is
-	# true on the panel and not only in the menu. The panel is built at boot
-	# by ubuntustudio-panel-refresh from a list it only keeps entries of that
-	# actually exist; adding the entry to that list is enough.
-	PR="$FULL/usr/sbin/ubuntustudio-panel-refresh"
-	if [ -f "$PR" ] && ! grep -q 'tone3000.desktop' "$PR"; then
-		sed -i 's|\[6\]="carla.desktop"|[6]="carla.desktop"\n[7]="tone3000.desktop"|' "$PR"
-		echo "  panel: tone3000 pinned in ubuntustudio-panel-refresh favourites"
-	fi
-
-	# Resolve the standalone's libraries against the image being built, not
-	# against this machine, which is also not a media workstation. ldd runs
-	# the loader with LD_TRACE_LOADED_OBJECTS and needs nothing mounted.
-	if command -v chroot >/dev/null 2>&1; then
-		unresolved=$(chroot "$FULL" ldd /usr/bin/TONE3000 2>/dev/null |
-			grep 'not found' || true)
-		if [ -n "$unresolved" ]; then
-			die "the TONE3000 standalone has unresolved libraries IN THE IMAGE:
-$(printf '%s\n' "$unresolved" | sed 's/^/     /')
-     The runtime set is GTK3, ALSA, fontconfig, X11 and libcurl; one of them
-     is missing from the layer. Fix the package list; a plugin that cannot
-     load is worse than one that was never installed."
-		else
-			echo "  ldd: all libraries resolve inside the image"
-		fi
-	fi
-
-	rm -rf "$tmp"
 }
 
 # Everything that makes the live tree PuralvOS rather than Ubuntu Studio.
@@ -421,8 +264,8 @@ if [ -f "$FULL/etc/os-release" ]; then
 	# carries it, and a derivative of a derivative has both. This is the line
 	# between rebranding and breaking the ecosystem the packages expect.
 	brand_os_release() {
-		sed -i -e 's#^NAME=.*#NAME="PuralvOS"#' \
-		       -e 's#^PRETTY_NAME=.*#PRETTY_NAME="PuralvOS 26.10"#' \
+		sed -i -e "s#^NAME=.*#NAME=\"$PRODUCT\"#" \
+		       -e "s#^PRETTY_NAME=.*#PRETTY_NAME=\"$PRODUCT 26.10\"#" \
 		       -e 's#^ID=.*#ID=puralvos#' \
 		       -e 's#^ID_LIKE=.*#ID_LIKE="ubuntu debian"#' \
 		       -e 's#^HOME_URL=.*#HOME_URL="https://github.com/alvgot/puralvos"#' \
@@ -445,8 +288,8 @@ if [ -f "$FULL/etc/os-release" ]; then
 		fi
 	fi
 	sed -i -e 's/^DISTRIB_ID=.*/DISTRIB_ID=PuralvOS/' \
-	       -e 's/^DISTRIB_NAME=.*/DISTRIB_NAME="PuralvOS"/' \
-	       -e 's/^DISTRIB_DESCRIPTION=.*/DISTRIB_DESCRIPTION="PuralvOS 26.10"/' \
+	       -e "s/^DISTRIB_NAME=.*/DISTRIB_NAME=\"$PRODUCT\"/" \
+	       -e "s/^DISTRIB_DESCRIPTION=.*/DISTRIB_DESCRIPTION=\"$PRODUCT 26.10\"/" \
 	       -e 's/^DISTRIB_CODENAME=.*/DISTRIB_CODENAME=puralvos/' \
 	       "$FULL/etc/lsb-release" 2>/dev/null || true
 	BRANDED=$(sed -n 's/^PRETTY_NAME="\(.*\)"$/\1/p' "$OSREL")
@@ -471,7 +314,7 @@ fi
 # read the live session's release from the wrong file again.
 for issue in "$FULL/etc/issue" "$FULL/etc/issue.net"; do
 	[ -e "$issue" ] || continue
-	printf 'PuralvOS 26.10 \\n \\l\n' > "$issue"
+	printf '%s 26.10 \\n \\l\n' "$PRODUCT" > "$issue"
 done
 echo "  issue: $(head -1 "$FULL/etc/issue" 2>/dev/null)"
 
@@ -522,13 +365,13 @@ if [ -f "$G" ]; then
 	# so it must not offer one; the strings are still the stock ones at this
 	# point, which is why the substitution is anchored on them.
 	if [ "${PURALVOS_INSTALLER:-0}" = "1" ]; then
-		MENU_NAME='PuralvOS Live — install or try out'
+		MENU_NAME="$PRODUCT Live — install or try out"
 	else
-		MENU_NAME='PuralvOS Live — try out'
+		MENU_NAME="$PRODUCT Live — try out"
 	fi
 	sed -i \
 	  -e "s/Try or Install Ubuntu Studio/$MENU_NAME/" \
-	  -e 's/Ubuntu Studio (safe graphics)/PuralvOS Live (safe graphics)/' \
+	  -e "s/Ubuntu Studio (safe graphics)/$PRODUCT Live (safe graphics)/" \
 	  -e 's/^set timeout=.*/set timeout=1/' \
 	  -e '/^grub_platform$/d' \
 	  "$G"
@@ -646,12 +489,21 @@ install -Dm0644 "$REPO/tools/puralvos-selftest.service" \
 	"$FULL/etc/systemd/system/puralvos-selftest.service"
 rm -f "$FULL/lib/systemd/system/puralvos-selftest.service"
 
-# For the live session, disable the self-test unit to avoid boot delays
-# The self-test runs a comprehensive verification but slows down startup
-chroot "$FULL" systemctl disable puralvos-selftest.service >/dev/null 2>&1 || true
-# Remove from multi-user.target.wants to prevent it from running at boot
-rm -f "$FULL/etc/systemd/system/multi-user.target.wants/puralvos-selftest.service"
-echo "  self test unit: disabled for live session (faster boot)"
+# The self test runs a comprehensive verification and opens every application,
+# so it is opt-in. A production live session must not pay that cost; a
+# verification build (PURALVOS_SELFTEST=1) must actually run the thing the
+# kernel command line asks for, so the two decisions are made together here.
+if [ "${PURALVOS_SELFTEST:-0}" = 1 ]; then
+	chroot "$FULL" systemctl enable puralvos-selftest.service >/dev/null 2>&1 \
+		|| die "could not enable puralvos-selftest.service in the chroot"
+	[ -L "$FULL/etc/systemd/system/multi-user.target.wants/puralvos-selftest.service" ] \
+		|| die "puralvos-selftest.service did not get enabled"
+	echo "  self test unit: enabled (verification build)"
+else
+	chroot "$FULL" systemctl disable puralvos-selftest.service >/dev/null 2>&1 || true
+	rm -f "$FULL/etc/systemd/system/multi-user.target.wants/puralvos-selftest.service"
+	echo "  self test unit: disabled for live session (faster boot)"
+fi
 
 # The desktop-entry parser the self test uses, so there is one implementation
 # of it in the shipped image rather than one in the image and another in the
@@ -799,6 +651,21 @@ case "$AUDIO_MEMBERS" in
 		echo "  WARNING: live user $LIVE_USER is NOT in the audio group" >&2
 		echo "           audio group is now: $(awk -F: '/^audio:/{print $4}' "$FULL/etc/group")" >&2 ;;
 esac
+
+# Devede 4.21 ships a desktop entry whose TryExec/Exec name /usr/bin/devede,
+# while the package installs /usr/bin/devede_ng. On the first video build the
+# hygiene pass hid the entry as a dead launcher even though the application was
+# installed. Point it at the binary the package actually ships, and clear the
+# NoDisplay line an earlier run of this function may have added.
+DEV="$FULL/usr/share/applications/devede_ng.desktop"
+if [ -x "$FULL/usr/bin/devede_ng" ] && [ -f "$DEV" ]; then
+	sed -i -e 's#^TryExec=/usr/bin/devede$#TryExec=/usr/bin/devede_ng#' \
+	       -e 's#^Exec=/usr/bin/devede$#Exec=/usr/bin/devede_ng#' \
+	       -e '/^# Hidden by PuralvOS: the executable this entry names is not installed\.$/d' \
+	       -e '/^# See tools\/build-live.sh:fix_desktop_entries$/d' \
+	       -e '/^NoDisplay=true$/d' "$DEV"
+	echo "  devede menu entry: Exec corrected to /usr/bin/devede_ng"
+fi
 
 say "desktop entry hygiene"
 fix_desktop_entries
@@ -1234,6 +1101,14 @@ for f in "$FULL"/usr/share/plasma/layout-templates/org.puralvos.desktop.*/conten
 	sed -i -e '/org\.kde\.plasma\.pager/d' \
 	       -e '/org\.kde\.plasma\.minimizeall/d' \
 	       -e 's/,[[:space:]]*"applications:org\.kde\.discover\.desktop"//g' \
+	       -e 's/patchance\.desktop/blender.desktop/g' \
+	       -e 's/ardour\.desktop/vlc.desktop/g' \
+	       -e 's/org\.kde\.krita\.desktop/org.kitone.subtitleeditor.desktop/g' \
+	       -e 's/gimp\.desktop/org.synfig.SynfigStudio.desktop/g' \
+	       -e 's/org\.kde\.digikam\.desktop/xjadeo.desktop/g' \
+	       -e 's/org\.darktable\.darktable\.desktop/org.kde.k3b.desktop/g' \
+	       -e 's/raysession\.desktop/blender.desktop/g' \
+	       -e 's/carla\.desktop/com.obsproject.Studio.desktop/g' \
 	       -e 's/"org\.kde\.plasma\.kicker"/"org.kde.plasma.kickerdash"/g' \
 	       -e 's#/usr/share/pixmaps/ubuntustudio-logo-menu\.png#/usr/share/pixmaps/puralvos-logo-menu.png#g' \
 	       -e 's/kickerdash\.writeConfig("customButtonImage", "app-launcher")/kickerdash.writeConfig("customButtonImage", "\/usr\/share\/pixmaps\/puralvos-logo-menu.png")/' \
@@ -1245,13 +1120,21 @@ if [ -f "$FULL/usr/sbin/ubuntustudio-panel-refresh" ]; then
 	       -e '/org\.kde\.plasma\.pager/d' \
 	       -e '/org\.kde\.plasma\.minimizeall/d' \
 	       -e 's/"applications:org\.kde\.discover\.desktop",[[:space:]]*//g' \
+	       -e 's/patchance\.desktop/blender.desktop/g' \
+	       -e 's/ardour\.desktop/vlc.desktop/g' \
+	       -e 's/org\.kde\.krita\.desktop/org.kitone.subtitleeditor.desktop/g' \
+	       -e 's/gimp\.desktop/org.synfig.SynfigStudio.desktop/g' \
+	       -e 's/org\.kde\.digikam\.desktop/xjadeo.desktop/g' \
+	       -e 's/org\.darktable\.darktable\.desktop/org.kde.k3b.desktop/g' \
+	       -e 's/raysession\.desktop/blender.desktop/g' \
+	       -e 's/carla\.desktop/com.obsproject.Studio.desktop/g' \
 	       -e 's#/usr/share/pixmaps/ubuntustudio-logo-menu\.png#/usr/share/pixmaps/puralvos-logo-menu.png#g' \
 	       -e 's/"org\.kde\.plasma\.kicker"/"org.kde.plasma.kickerdash"/g' \
 	       -e 's/kickerdash\.writeConfig("customButtonImage", "app-launcher")/kickerdash.writeConfig("customButtonImage", "\/usr\/share\/pixmaps\/puralvos-logo-menu.png")/' \
 	       -e 's/\(kicker\.writeConfig("customButtonImage", "\/usr\/share\/pixmaps\/puralvos-logo-menu\.png")\)/\1\nkicker.writeConfig("useCustomButtonImage", "true")/' \
 	       -e 's/^\(panel\.height = gridUnit \* [0-9.]*\)$/\1\npanel.opacity = "opaque"/' \
 		"$FULL/usr/sbin/ubuntustudio-panel-refresh"
-	echo "  panel builder: menu applet repointed to kickerdash, pager/show-desktop/discover dropped"
+	echo "  panel builder: menu applet repointed to kickerdash, video launchers pinned, pager/show-desktop/discover dropped"
 fi
 
 # The kept theme's own layout script still points its two desktop
@@ -1825,7 +1708,6 @@ fi
 # that --author-only ships it too: brand_the_tree is the function both paths
 # run, and an image whose branding is right but whose headlining plugin is
 # missing is not the product either path should be able to build.
-install_tone3000
 
 # --------------------------------------------------------------------------
 # boot time
@@ -2326,9 +2208,9 @@ fi
 #     containing darktable, digikam, hugin and the rest of the audio/video/
 #     graphics stack, because they are in the ubuntustudio metapackages'
 #     dependency chain and apt takes the chain with them. What actually
-#     happens to that stack is decided list by list in the audio trim below;
+#     happens to that stack is decided list by list in the video trim below;
 #     the generic kernel is unshipped at repack time, by file.
-say "removing the non-audio task bundles"
+say "removing the non-video task bundles"
 purge_in_chroot() {
 	local p
 	for p in "$@"; do
@@ -2338,63 +2220,80 @@ purge_in_chroot() {
 			head -3 | sed 's/^/  /' || true
 	done
 }
-purge_in_chroot ubuntustudio-photography ubuntustudio-publishing \
-	ubuntustudio-video ubuntustudio-graphics
+purge_in_chroot ubuntustudio-audio ubuntustudio-photography \
+	ubuntustudio-publishing ubuntustudio-graphics
 
 # --------------------------------------------------------------------------
-# the audio trim
+# the video trim
 # --------------------------------------------------------------------------
-# tasks.list decides what this product ships. The twelve lists in
-# tools/audio-trim decide what the stock image leaked in and the product does
-# not ship anyway. They are one file per batch and they are applied in
-# numeric order, because that is how they were verified: each batch was
-# simulated and then really purged inside a working copy reconstructed
-# exactly as this script builds one, and the audio anchors were checked
-# after every batch.
+# tasks.list decides what this product ships. The lists in tools/video-trim
+# decide what the stock image leaked in and the product does not ship anyway.
+# Active lists are applied in numeric order; a *.list.disabled file is kept
+# with its reason and is not applied.
 #
-# The command is not an approximation of the vetting, it is the vetting
-# command:
+# This branch starts from the audio branch's batches where the batch is not
+# product-specific, and changes the ones that are:
+#
+#   02-audio.list       was 02-video-optical.list. It removes the audio apps
+#                       instead of the video apps, so kdenlive, melt, MLT and
+#                       subtitleeditor stay.
+#   03-graphics.list    keeps ImageMagick, because devede and synfig depend on
+#                       it. The list still removes GIMP, Krita, Inkscape and
+#                       the photography stack.
+#   07-online-accounts  disabled. kdenlive depends on libkf6purpose-bin, which
+#                       depends on libkaccounts6-2; removing the accounts
+#                       stack takes kdenlive and melt with it.
+#   11-geo              disabled. GDAL is a hard dependency of OpenCV's
+#                       imgcodecs, which libopenimageio depends on, which
+#                       Blender depends on.
+#   12-ml              disabled. kdenlive needs gstreamer1.0-plugins-bad, and
+#                       that package depends on the TensorFlow, ONNX and
+#                       OpenVINO runtime the ML batch would remove.
+#
+# The disabled files stay in the tree because they record the measured
+# collisions; deleting them would invite the next person to re-apply the
+# audio branch's list and break the video apps.
+#
+# The command is:
 #
 #	apt-get purge -y --auto-remove <names in the list>
 #
-# The order matters, and so does --auto-remove. Part of what disappears in
-# each batch is orphans that only that flag moves at that moment; the
-# numbers that were vetted are 109, 42, 264, 155, 43, 49, 54, 17, 29, 0,
-# 72 and 17 packages, and each batch's log ($WORK/purge-<list>.log) says
-# what it actually did. Merging the lists or dropping one is a different
-# transaction that was never verified, even if the names add up.
-#
-# The two candidates that did NOT survive vetting are recorded in
-# excludes.list: libsnapd-glib-2-1 is load-bearing for the PipeWire and
-# WirePlumber modules, and the GPU batch (libplacebo360) is a hard
-# dependency chain into ffmpeg. And this is a trim, not a sweep: what apt
-# must not let go — the desktop, the DAWs, OBS, the JACK/PipeWire stack —
-# is marked manual before any of this runs, so autoremove can never reach
-# it no matter what a future list says.
-say "protecting the audio stack"
+# Each batch writes $WORK/purge-<list>.log and prints how many packages it
+# removed. This is a trim, not a sweep: the desktop, the video applications
+# and the PipeWire/JACK runtime are marked manual before any of this runs, so
+# autoremove can never reach them no matter what a future list says.
+say "protecting the video stack"
 # shellcheck disable=SC2086
 #
-# xserver-xorg-core is in this list even though it is not audio: purging the
-# video and graphics task bundles orphans it (measured: without this mark the
-# next autoremove takes the X server along with qlcplus, the wacom driver and
-# the rest of that chain). It is desktop infrastructure, not a media bundle,
-# and the X11 sessions SDDM offers depend on it.
+# xserver-xorg-core is in this list even though it is not video: purging the
+# audio, graphics and photography task bundles orphans it. It is desktop
+# infrastructure, and the X11 sessions SDDM offers depend on it.
 #
 # Dolphin cannot be saved with a mark: it shares the baloo/kio widgets with
 # okular, and the documents batch resolves the whole chain into one purge
-# transaction (measured: purge-05-documents.log lists dolphin as REMOVED even
-# with the manual mark). It is the file manager the panel pins, so it is
-# installed back after the trim, next to Firefox.
+# transaction. It is the file manager the panel pins, so it is installed back
+# after the trim, next to Firefox.
+#
+# The Blender runtime libraries are marked explicitly because 12-ml-video.list
+# removes the rest of the ML stack, and a future autoremove must not be able to
+# reinterpret them as orphaned when a list changes.
 chroot "$FULL" apt-mark manual \
-	obs-studio obs-plugins libobs0t64 obs-pipewire-audio-capture \
-	ffmpeg vlc ardour carla mixxx lmms hydrogen csound musescore3 \
-	pipewire wireplumber jackd2 libjack-jackd2-0 \
+	ubuntustudio-video ubuntustudio-pipewire-config \
+	kdenlive kdenlive-data melt libmlt7 libmlt++7 libmlt-data \
+	blender blender-data obs-studio obs-plugins libobs0t64 \
+	obs-pipewire-audio-capture ffmpeg vlc vlc-plugin-pipewire \
+	subtitleeditor synfigstudio qprompt xjadeo devede k3b libk3b8t64 \
+	imagemagick osspd \
+	pipewire wireplumber pipewire-jack libjack-jackd2-0 \
+	libembree4-4 libimath-3-1-29t64 libopencolorio2.5 \
+	libopenexr-3-4-33 libopenimageio2.5 libopenvdb10.0t64 \
+	libopenxr-loader1 libshaderc1 \
 	plasma-desktop plasma-workspace sddm systemsettings \
 	xserver-xorg-core >/dev/null
 
-say "removing the audio trim"
+say "removing the video trim"
 TRIM_REMOVED=0
-for TRIMFILE in "$REPO"/tools/audio-trim/*.list; do
+for TRIMFILE in "$REPO"/tools/video-trim/*.list; do
 	mapfile -t TRIMNAMES < <(grep -vE '^[[:space:]]*(#|$)' "$TRIMFILE")
 	[ "${#TRIMNAMES[@]}" -gt 0 ] || continue
 	TRIMLOG="$WORK/purge-$(basename "$TRIMFILE" .list).log"
@@ -3392,7 +3291,7 @@ done
 
 say "writing the ISO"
 STAMP=$(date +%Y%m%d-%H%M)
-ISOUT="$OUT/puralvos-live-$STAMP.iso"
+ISOUT="$OUT/$PRODUCT_SLUG-$STAMP.iso"
 
 # grub-mkrescue, NOT a hand written xorriso command line.
 #
@@ -3489,7 +3388,7 @@ done
 GRUB_HOST_VER=$(grub_module_version /usr/lib/grub/x86_64-efi)
 echo "  grub: ISO tree modules pinned to the build machine's GRUB ${GRUB_HOST_VER:-unknown}"
 
-grub-mkrescue -o "$ISOUT" -volid "PURALVOS_LIVE" "$WORK/iso/" 2>&1 \
+grub-mkrescue -o "$ISOUT" -volid "PURALVOS_VIDEO" "$WORK/iso/" 2>&1 \
 	| grep -viE '^xorriso|^libisofs|^Drive |^Media |^Added to|^ISO image produced|^Writing to' \
 	| tail -4 | sed 's/^/  /'
 
@@ -3548,8 +3447,8 @@ cat <<EOF
 
   Test it with:
 
-    ./scripts/kvmtest.sh "$ISOUT" puralvos-live 900 60
-    python3 scripts/qmp-key.py /tmp/opencode/kvmrun/puralvos-live ret
+    ./scripts/kvmtest.sh "$ISOUT" $PRODUCT_SLUG 900 60
+    python3 scripts/qmp-key.py /tmp/opencode/kvmrun/$PRODUCT_SLUG ret
 
   There is no serial console on an Ubuntu ISO. Judge it from the screenshots.
 

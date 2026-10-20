@@ -1,0 +1,55 @@
+# Audio applications and instrument/effects packages. The video branch keeps
+# the audio runtime (PipeWire, libjack-jackd2-0, osspd) because editors and OBS
+# need it, but it does not ship a DAW, a soft synth, or a guitar rig.
+#
+# This list replaces the audio branch's 02-video-optical.list. Do not purge
+# kdenlive, melt, MLT, subtitleeditor, devede or k3b here: they are the video
+# product.
+ableton-link-utils
+ardour
+audacity
+bespokesynth
+carla
+csound
+dgedit
+din
+drumgizmo
+drumkv1
+fmit
+freewheeling
+gmidimonitor
+guitarix
+gxtuner
+helvum
+hydrogen
+idjc
+jack-mixer
+jackd2
+jacktrip-gui
+jnoise
+kid3-qt
+kmetronome
+lmms
+mcpdisp
+meterbridge
+mixxx
+multimedia-puredata
+musescore3
+padthv1
+patchance
+polyphone
+puredata
+qjackctl
+qsynth
+qtractor
+rakarrack
+raysession
+samplv1
+sonic-pi
+supercollider
+synthv1
+ubuntustudio-audio-plugins
+vmpk
+whysynth
+yoshimi
+zynaddsubfx

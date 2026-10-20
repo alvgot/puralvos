@@ -1,6 +1,6 @@
-# PuralvOS Audio-Only task set
+# PuralvOS Video-Only task set
 #
-# What PuralvOS Audio installs, and nothing else.
+# What PuralvOS Video installs, and nothing else.
 #
 # This list is derived from the Ubuntu Studio Installer's own task table,
 # taken from backend.py in ubuntustudio-installer 2.0.7 (resolute):
@@ -18,17 +18,19 @@
 #         "ubuntu-edu-music",
 #     )
 #
-# PuralvOS Audio-Only is that list minus everything except audio.
+# PuralvOS Video-Only is that list minus everything except video.
 #
 # Resolved against Ubuntu 26.10 (stonking).
 
 # --- the one task that defines the product -------------------------------
 
-ubuntustudio-audio
+ubuntustudio-video
 
 # --- real time performance ------------------------------------------------
 #
-# The reason this is more than "Ubuntu with three boxes ticked".
+# The video branch keeps the real time kernel and the low latency/performance
+# settings: a workstation that edits and captures media needs deterministic
+# scheduling for capture, audio monitoring and compositing too.
 
 ubuntustudio-lowlatency-settings
 ubuntustudio-performance-tweaks
@@ -57,19 +59,14 @@ ubuntustudio-pipewire-config
 #
 # linux-lowlatency is the GENERIC kernel with low latency boot arguments:
 # mitigations off, no watchdog, that sort of thing. It still preempts
-# cooperatively, so it will still glitch under audio load. linux-realtime is
-# the PREEMPT_RT build, which is what real time priority actually needs.
+# cooperatively, so it will still stutter under load. linux-realtime is the
+# PREEMPT_RT build, which is what real time priority actually needs.
 #
 # Verified against the resolute archive, not assumed. tools/kernel-select.py
 # re-derives this at build time so an upstream rename cannot quietly put a
 # generic kernel on a machine that thinks it has a real time one:
 #
 #     tools/kernel-select.py --policy realtime
-#
-# NOTE: the stock Ubuntu Studio ISO does NOT ship this kernel. Its manifest
-# carries only linux-generic 7.0.0-14.14. The real time kernel is installed
-# into the installed system by the installer, so PuralvOS has to do it
-# explicitly or it will silently be a general kernel.
 
 linux-realtime
 
@@ -77,20 +74,17 @@ linux-realtime
 #
 # Not in this list, on purpose:
 #
-#   ubuntustudio-video         video production tools; not in audio-only
-#   ubuntustudio-graphics      graphics/photo tools; not in audio-only
-#   ubuntustudio-photography   darktable and friends; not in audio-only
+#   ubuntustudio-audio         audio production tools; not in video-only
+#   ubuntustudio-graphics      graphics/photo tools; not in video-only
+#   ubuntustudio-photography   darktable and friends; not in video-only
 #   ubuntustudio-publishing    scribus, calibre and a document suite; not
 #                              media production
 #   ubuntustudio-wallpapers    optional, kept out so the image carries only
 #                              what does work
 #   ubuntu-edu-music           music education classroom tools; revisit if
 #                              PuralvOS grows an education story
-#   ubuntustudio-menu          menu entries; kept for audio apps
-#   ubuntu-edu-music           music education classroom tools; revisit if
-#                              PuralvOS grows an education story
+#   ubuntustudio-menu          menu entries; kept for video apps
 #   ubuntu-studio-desktop      THE umbrella. Installing it is how a media
 #                              workstation turns into a general desktop with
 #                              LibreOffice, snapd, synaptic and printer drivers
 #                              in it. Never install it here; see excludes.list.
-

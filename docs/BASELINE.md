@@ -84,13 +84,13 @@ decision instead of turning into folklore.
 ```
 ubuntustudio-desktop              ← the umbrella we do not want
 ubuntustudio-desktop-core
-ubuntustudio-audio                ← keep
-ubuntustudio-audio-core
-ubuntustudio-audio-plugins
-ubuntustudio-video                ← remove, audio-only
-ubuntustudio-graphics             ← remove, audio-only
-ubuntustudio-photography          ← remove, audio-only
-ubuntustudio-publishing           ← remove, audio-only
+ubuntustudio-audio                ← remove, video-only
+ubuntustudio-audio-core           ← remove
+ubuntustudio-audio-plugins        ← remove
+ubuntustudio-video                ← keep
+ubuntustudio-graphics             ← remove, video-only
+ubuntustudio-photography          ← remove, video-only
+ubuntustudio-publishing           ← remove, video-only
 ubuntustudio-pipewire-config
 ubuntustudio-lowlatency-settings
 ubuntustudio-performance-tweaks
@@ -101,9 +101,9 @@ ubuntustudio-wallpapers(-stonking)
 ubuntustudio-fonts / -icon-theme / -look
 ```
 
-`ubuntustudio-desktop` is present and pulls the general-purpose desktop with it;
-the four non-audio task bundles (`-video`, `-graphics`, `-photography`,
-`-publishing`) are present and are not wanted. The umbrella is kept out via
+`ubuntustudio-desktop` is present and pulls the general-purpose desktop with it.
+On the video branch the four other task bundles (`-audio`, `-graphics`,
+`-photography`, `-publishing`) are present and are not wanted. The umbrella is kept out via
 `excludes.list` and the bundles are purged at build time (`purge_in_chroot` in
 `tools/build-live.sh`) — with them go their orphaned chains (QLC+ and the
 lighting stack, the Wacom X driver) while `xserver-xorg-core` is deliberately

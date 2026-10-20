@@ -1,6 +1,6 @@
-# PuralvOS
+# PuralvOS Video
 
-An audio-only workstation built on **Ubuntu Studio 26.10**.
+A video-only workstation built on **Ubuntu Studio 26.10**.
 
 Named for the two of us: **Pur**ia + **Alv**.
 
@@ -8,15 +8,15 @@ Named for the two of us: **Pur**ia + **Alv**.
 
 ## What this is
 
-Ubuntu Studio, narrowed to audio and with a real time kernel, so that every
-machine that comes off this build is a working audio workstation out of the
-box. This is the audio branch of a four-image family: the full merged ISO and
-the graphics-only and video-only branches are built from the same harness.
+Ubuntu Studio, narrowed to video and with a real time kernel, so that every
+machine that comes off this build is a working video workstation out of the
+box. This is the video branch of a four-image family: the full merged ISO and
+the audio-only and graphics-only branches are built from the same harness.
 
 Three things define it:
 
-1. **Only what does the work.** Audio. No video editors, no graphics suites,
-   no LibreOffice, no snapd, no printer drivers, no synaptic.
+1. **Only what does the work.** Video. No DAWs or audio plugins, no graphics
+   suites, no LibreOffice, no snapd, no printer drivers, no synaptic.
 2. **The real time kernel, from the distro.** `linux-realtime` out of the
    Ubuntu archive. Not a PPA, so it keeps getting security updates.
 3. **Our packages upgrade; yours don't.** The curated set we ship stays
@@ -36,15 +36,47 @@ Three things define it:
 ISO: `ubuntustudio-26.10-desktop-amd64.iso`, 6.4 GB, checksum pinned in
 [`base/CHECKSUMS`](base/CHECKSUMS) and verified on download.
 
+## What is in the video image
+
+The product set comes from Ubuntu Studio's own `ubuntustudio-video` task plus
+the archive's real time kernel:
+
+- **Editing** — Kdenlive, MLT (`melt`)
+- **Compositing and animation** — Blender
+- **Capture and streaming** — OBS Studio
+- **Playback and conversion** — VLC, FFmpeg/ffprobe
+- **Subtitles** — Subtitle Editor
+- **Motion graphics** — Synfig Studio
+- **Teleprompter** — QPrompt
+- **Video/audio sync** — Xjadeo
+- **DVD authoring** — DevedeNG, K3b
+
+The audio applications, graphics applications, LibreOffice, TeX, toolchains and
+language packs are removed. PipeWire, the JACK compatibility layer and the
+realtime audio limits stay because Kdenlive, OBS and playback need them.
+
+The trim is a set of explicit lists under [`tools/video-trim`](tools/video-trim),
+applied by the build and audited with `apt-get -s purge` before an ISO is
+written. Three lists are deliberately disabled on this branch because removing
+them would take product packages with them:
+
+| list | why it is disabled |
+| --- | --- |
+| `07-online-accounts` | Kdenlive → `libkf6purpose-bin` → `libkaccounts6-2` |
+| `11-geo` | Blender → `libopenimageio2.5` → OpenCV → GDAL |
+| `12-ml-video` | MLT depends on OpenCV; Kdenlive depends on GStreamer's ONNX/TensorFlow plugins |
+
+The details, including the exact dependency paths, are in
+[docs/VIDEO.md](docs/VIDEO.md).
+
 ## On proprietary software
 
 PuralvOS ships proprietary software on purpose.
 
 This is a deliberate position. PuralvOS enables `multiverse` and `restricted`
-because everything that works is the requirement:
-NVIDIA drivers, Intel and Broadcom WiFi firmware, unfree codecs. A media
-workstation that refuses to drive the graphics card in the machine is not a
-workstation.
+because everything that works is the requirement: NVIDIA drivers, Intel and
+Broadcom WiFi firmware, unfree codecs. A media workstation that refuses to
+drive the graphics card in the machine is not a workstation.
 
 The cost is that PuralvOS cannot claim to be free software. `tools/manifest.py`
 exists so that stays a tracked decision rather than a surprise.
@@ -56,8 +88,8 @@ the thing you get installed.
 
 | build | boots to | installs to disk | how |
 | --- | --- | --- | --- |
-| **PuralvOS Live** (default) | full workstation, live | no | `tools/build-live.sh` |
-| **PuralvOS** (installable) | full workstation, live | yes, via the stock Ubuntu installer | `PURALVOS_INSTALLER=1 tools/build-live.sh` |
+| **PuralvOS Video Live** (default) | full workstation, live | no | `tools/build-live.sh` |
+| **PuralvOS Video** (installable) | full workstation, live | yes, via the stock Ubuntu installer | `PURALVOS_INSTALLER=1 tools/build-live.sh` |
 
 The default is the Live image because that is the one that is measured and
 used: it masks snapd, one of the two largest boot costs on the stock ISO (the
@@ -66,11 +98,11 @@ other is `ldconfig`), and it is already excluded by
 snap-based installer; `PURALVOS_INSTALLER=1` builds the other variant with
 snapd kept.
 
-Boot to a usable Plasma desktop is **about 50 seconds** on a 2016 ThinkPad
-T460s from a USB stick, and **43–44 seconds** (kernel start to desktop) under
-KVM with the ISO throttled to 25 MB/s. How that is measured, and what it
-costs, is in [docs/PERFORMANCE.md](docs/PERFORMANCE.md); the session that
-found it is in [docs/WORK-REPORT.md](docs/WORK-REPORT.md).
+The video image built on 20 October 2026 reached the desktop marker at
+**22.69 seconds** under KVM on this build host. That is the unthrottled
+measurement; a throttled USB-stick measurement has not been taken for this
+branch yet. The audio branch's boot-time work and the measurement method are
+in [docs/PERFORMANCE.md](docs/PERFORMANCE.md).
 
 ## Layout
 
@@ -90,6 +122,7 @@ scripts/kvmboottime.sh     measure boot-to-desktop, with the ISO throttled
 tools/puralvos-selftest    verify a booted image from the inside
 tools/puralvos-selftest.service  the unit that runs it at boot, opt-in
 tools/puralvos-rt-fix      the in-image real time audio fix
+tools/video-trim/          package removal lists for this branch
 tools/lib/desktop-exec.sh  read the executable out of a .desktop file
 tools/test-desktop-exec    prove it reads the real entries correctly
 tools/kernel-select.py     find the real time kernel by asking apt
@@ -97,6 +130,7 @@ tools/upgrade-curated.sh   upgrade our packages, leave yours alone
 scripts/kvmtest.sh         boot an image headlessly, capture serial + screenshots
 scripts/qmp-key.py         send keys to a running guest
 docs/ARCHITECTURE.md       how the images are built
+docs/VIDEO.md              this branch: package decisions, build and test record
 docs/STANDARD-TOOLS.md    Ubuntu's tools first, and the audited exceptions
 docs/BASELINE.md           what the stock base actually contains, measured
 docs/PACKAGES.md           what the built image carries, and what could go
@@ -116,7 +150,8 @@ make packages-report   # what the built image carries, and what could go
 make test-parser       # prove the desktop-entry parser reads real entries
 ```
 
-Building an image needs about 45 GB free and takes roughly half an hour:
+Building an image needs about 45 GB free. On this build host a from-scratch
+build takes roughly five minutes:
 
 ```sh
 PURALVOS_RESUME=0 make live     # from scratch
@@ -167,37 +202,47 @@ Studio* rather than for the substring *ubuntu*, so those two stay.
 
 ## Status
 
-The image builds, boots, and reaches a usable desktop in about 50 seconds on
-the laptop it was made for. The live session autologins as `puralvos` and an
-ordinary `puralv` account exists for a console or ssh login.
+The image builds, boots, and reaches a usable Plasma desktop. The live session
+autologins as `puralvos` and an ordinary `puralv` account exists for a console
+or ssh login.
 
-Verification is opt-in so it does not cost boot time or launch applications:
-`PURALVOS_SELFTEST=1` puts `console=ttyS0,115200n8` and `puralvos.selftest=1`
-on the menu entries, and the self test then reports the running kernel,
-`os-release` and every check over the serial port. A normal build boots with
-the stock kernel line; `scripts/kvmboottime.sh` is the boot-time measurement,
-using the marker the live session writes to the serial port.
+Build of 20 October 2026:
 
-See [docs/WORK-REPORT.md](docs/WORK-REPORT.md) for where the last build stands
-and what is still open.
+| | |
+| --- | --- |
+| ISO | `out/puralvos-video-20261020-0239.iso`, 6.57 GB |
+| SHA-256 | `a3d1f76b466a864f031eddf2dd07639802af7e509c7d09da1be61e217c68a219` |
+| Installed packages | 2377 |
+| Desktop marker | 22.69 s under KVM |
+| `dpkg --audit` | clean |
+| Kernel | 7.3.0-9-realtime, PREEMPT_RT |
+
+The in-guest self test (verification build) reports **88 pass, 13 fail,
+1 slow, 17 skip**. The failures are dominated by the headless QEMU environment:
+Blender and other Qt/OpenGL applications start but draw through llvmpipe/Zink,
+and polkit/tty-dependent utilities cannot open their dialogs. Visual inspection
+of the same run confirms Blender and Subtitle Editor do open; the 60-second
+window probe is simply shorter than their first-run startup on this host. The
+full breakdown, with logs, is in [docs/VIDEO.md](docs/VIDEO.md).
 
 Not yet done:
 
+- the graphics-only branch, which is the next image in the family
+- video verification on real hardware with a real GPU. Every runtime check so
+  far was made under QEMU with no GPU and no capture device
 - a licence — **still the first thing to do.** Everything in this repository is
   currently all rights reserved by default, and `tools/make-brand.py` has code
   in it.
 - the non-free manifest tool, so that shipping proprietary software stays a
   tracked decision (`tools/manifest.py`)
 - the installer path. The default build is the Live image (snapd masked);
-  `PURALVOS_INSTALLER=1` keeps snapd and the stock snap installer. How the
-  installed system should get this package set — preseed, install-then-exclude,
-  or the curated filesystem wholesale — is still Alv and Puria's to decide.
+  `PURALVOS_INSTALLER=1` keeps snapd and the stock snap installer.
 - the icon theme, the Plasma theme and the app menu XML. `ubuntustudio-look`,
   `ubuntustudio-icon-theme` and `ubuntustudio-menu` are still installed and
   still Ubuntu Studio's, which makes the icon theme the largest remaining
   branding gap. See [docs/BRANDING.md](docs/BRANDING.md).
-- audio verified on real hardware. Every real time claim in this repository has
-  been verified on a machine with no sound card, which is enough to prove the
-  *configuration* and not enough to prove the *performance*. `jack-xruns` in the
-  self test skips itself for exactly this reason rather than reporting a pass it
-  did not earn.
+- the audio-only 90-second boot-gap investigation, which is tracked on the
+  audio branch and is not changed by this branch.
+
+See [docs/WORK-REPORT.md](docs/WORK-REPORT.md) for the longer history and
+[docs/VIDEO.md](docs/VIDEO.md) for this branch's decisions.
