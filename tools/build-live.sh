@@ -1568,12 +1568,23 @@ echo "  boot marker: /etc/xdg/autostart/puralvos-bootmark.desktop"
 # because the host boots from NVMe and the laptop boots from a USB stick. This
 # puts systemd's own account of the boot in ~/boot-report.txt after login, so
 # the slow unit and the critical chain can be read off the machine that is
-# actually slow. systemd-analyze needs the journal only, not root.
+# actually slow. The full journal is included: the first report showed a
+# 90 second hole before sysinit.target with no unit owning it, which is the
+# signature of a job timeout (a device that never appears) and cannot be
+# resolved from the summary sections alone. The initramfs probes are compiled
+# into the main archive and listed in scripts/*/ORDER; they appear in dmesg as
+# PURALVOS_BOOTPROBE and bracket casper so an initramfs stall is visible too.
 cat > "$FULL/usr/local/bin/puralvos-boot-report" <<'EOS'
 #!/bin/sh
 out="$HOME/boot-report.txt"
 {
 	printf 'PuralvOS boot report %s\n' "$(date -Is)"
+	echo
+	echo '== cmdline =='
+	cat /proc/cmdline
+	echo
+	echo '== lsblk =='
+	lsblk -o NAME,MODEL,TRAN,SIZE,ROTA 2>&1
 	echo
 	echo '== systemd-analyze =='
 	systemd-analyze 2>&1
@@ -1581,10 +1592,54 @@ out="$HOME/boot-report.txt"
 	echo '== critical-chain =='
 	systemd-analyze critical-chain 2>&1
 	echo
-	echo '== blame (top 40) =='
-	systemd-analyze blame 2>&1 | head -40
+	echo '== cryptsetup / sysinit =='
+	systemctl show cryptsetup.target sysinit.target \
+		-p Id,Wants,After,Before,ActiveEnterTimestamp 2>&1
+	echo
+	echo '== cryptsetup dependencies =='
+	systemctl list-dependencies cryptsetup.target --all --no-pager 2>&1
+	echo
+	echo '== jobs at report time =='
+	systemctl list-jobs --no-pager 2>&1
+	echo
+	echo '== blame (top 60) =='
+	systemd-analyze blame 2>&1 | head -60
+	echo
+	echo '== failed units =='
+	systemctl --failed --no-legend 2>&1
+	echo
+	echo '== fstab / crypttab =='
+	cat /etc/fstab 2>&1
+	cat /etc/crypttab 2>&1
+	echo
+	echo '== dmesg =='
+	dmesg 2>&1
+	echo
+	echo '== journal =='
+	journalctl -b -o short-precise --no-pager 2>&1
 } > "$out" 2>&1
 chmod 0644 "$out"
+# The plot is the one view that shows the 90 second hole directly.
+systemd-analyze plot > "$HOME/boot-plot.svg" 2>/dev/null || true
+if [ -c /dev/ttyS0 ]; then
+	{
+		printf 'PURALVOS_BOOTREPORT_BEGIN\n'
+		head -n 30 "$out"
+		echo
+		echo '== serial blame =='
+		systemd-analyze blame 2>&1 | head -40
+		echo
+		echo '== serial critical-chain =='
+		systemd-analyze critical-chain 2>&1
+		echo
+		echo '== serial failed =='
+		systemctl --failed --no-legend 2>&1
+		echo
+		echo '== serial probes =='
+		dmesg 2>&1 | grep -E 'PURALVOS_BOOTPROBE|PURALVOS_DESKTOP_READY' || true
+		printf 'PURALVOS_BOOTREPORT_END\n'
+	} > /dev/ttyS0 2>/dev/null || true
+fi
 EOS
 chmod 0755 "$FULL/usr/local/bin/puralvos-boot-report"
 cat > "$FULL/etc/xdg/autostart/puralvos-boot-report.desktop" <<'EOF'
@@ -1804,6 +1859,21 @@ mask_unit() {
 }
 # The 7 GB checksum pass.
 mask_unit casper-md5check.service
+# The first real-hardware report showed a 90.065 s gap after
+# systemd-ask-password-wall.path and before cryptsetup.target, with no unit in
+# `systemd-analyze blame` owning it and no failed units. systemd's default
+# start timeout is 90 s, which is exactly the shape of that hole: a wanted job
+# that never completes, is cancelled at the timeout, and leaves the target to
+# activate afterwards. Cap the default at 30 s so a stuck job cannot cost a
+# minute and a half again; the full journal now shipped in the boot report
+# names the unit that hit the cap. This is a ceiling, not a diagnosis: the
+# normal units on this image finish in under two seconds.
+install -d "$FULL/etc/systemd/system.conf.d"
+cat > "$FULL/etc/systemd/system.conf.d/99-puralvos-timeout.conf" <<'EOF'
+[Manager]
+DefaultTimeoutStartSec=30s
+DefaultTimeoutStopSec=30s
+EOF
 # No ZFS in this product.
 mask_unit zfs.target zfs-import-cache.service zfs-import-scan.service \
 	zfs-load-module.service zfs-mount.service zfs-share.service \
@@ -1880,6 +1950,18 @@ rm -f "$FULL"/etc/systemd/system/multi-user.target.wants/snapd.seeded.service \
       "$FULL"/etc/systemd/system/multi-user.target.wants/snapd.core-fixup.service \
       "$FULL"/etc/systemd/system/multi-user.target.wants/snapd.recovery-chooser-trigger.service
 echo "  snap: masked (Live build; PURALVOS_INSTALLER=1 keeps snapd and the installer)"
+fi
+# The live layer still carries the installer's config mount: an ext4 device
+# unit keyed to a build-host UUID, plus an override that makes that device
+# want the mount with JobRunningTimeoutSec=0. It is not part of a live
+# session. The UUID is not this ISO's and is not in the base image's crypttab,
+# but a stale device unit is exactly the kind of hidden job that can sit in
+# sysinit for the default timeout, so remove it from the live build. The
+# installable variant keeps it because the installer uses it.
+if [ "${PURALVOS_INSTALLER:-0}" != "1" ]; then
+	rm -f "$FULL/usr/lib/systemd/system/subiquity_config.mount"
+	rm -rf "$FULL"/etc/systemd/system/dev-disk-by*x2duuid-00c629d6*.device.d
+	echo "  subiquity_config mount/device override: removed from live build"
 fi
 # Bluetooth stays available, but it should not fail because the radio is
 # rfkill-blocked (common on ThinkPads with the hardware switch off), which
@@ -2578,9 +2660,46 @@ if [ "$WITH_KERNEL" = 1 ]; then
 			echo "  warning: $RTVER's initrd carries no early microcode; the stock" >&2
 			echo "  initrd was dropped, so microcode loads late instead of early." >&2
 		fi
-		cp -f "$INITRD" "$WORK/iso/casper/initrd"
+		# Boot probes for the report. The first real-hardware report showed a
+		# ~90 s hole before sysinit.target that no unit accounts for; it may be
+		# a job timeout, but it may equally be time spent in this initramfs
+		# where systemd does not exist yet and nothing lands in the journal.
+		#
+		# The initrd is NOT a flat cpio. It is an uncompressed microcode
+		# archive, an uncompressed early2 archive, and then a zstd-compressed
+		# main archive (the one holding /init and scripts/casper). Appending a
+		# cpio archive to the end relies on a later archive overriding earlier
+		# files; the appended archive was not even listed by lsinitramfs and
+		# the probe never ran. Splicing one into the zstd stream corrupts the
+		# stream and panics the kernel. Repack all three parts, add the probe
+		# to the main archive, and list it in scripts/*/ORDER: run_scripts()
+		# sources ORDER and only runs what that file names, so a probe file
+		# alone is dead weight.
+		PROBEDIR="$WORK/.initrd-probe"
+		rm -rf "$PROBEDIR"
+		unmkinitramfs "$INITRD" "$PROBEDIR"
+		for probe_stage in init-top init-premount init-bottom; do
+			stage_dir="$PROBEDIR/main/scripts/$probe_stage"
+			[ -d "$stage_dir" ] || die "$INITRD has no main/scripts/$probe_stage to probe"
+			printf '#!/bin/sh\nread -r up _ < /proc/uptime\necho "PURALVOS_BOOTPROBE %s $up" > /dev/kmsg 2>/dev/null || true\necho "PURALVOS_BOOTPROBE %s $up" > /dev/console 2>/dev/null || true\n' \
+				"$probe_stage" "$probe_stage" > "$stage_dir/zz-puralvos-bootprobe"
+			chmod 0755 "$stage_dir/zz-puralvos-bootprobe"
+			touch "$stage_dir/ORDER"
+			printf '/scripts/%s/zz-puralvos-bootprobe "$@"\n[ -e /conf/param.conf ] && . /conf/param.conf\n' \
+				"$probe_stage" >> "$stage_dir/ORDER"
+		done
+		: > "$WORK/iso/casper/initrd"
+		for part in early early2 main; do
+			[ -d "$PROBEDIR/$part" ] || continue
+			if [ "$part" = main ]; then
+				( cd "$PROBEDIR/main" && find . -print0 | cpio --null -o -H newc --owner=0:0 2>/dev/null | zstd -T0 -19 -q ) >> "$WORK/iso/casper/initrd"
+			else
+				( cd "$PROBEDIR/$part" && find . -print0 | cpio --null -o -H newc --owner=0:0 2>/dev/null ) >> "$WORK/iso/casper/initrd"
+			fi
+		done
+		rm -rf "$PROBEDIR"
 		rm -f "$WORK/iso/casper/initrd.realtime"
-		echo "  casper/initrd <- initrd.img-$RTVER ($(du -h "$INITRD" | cut -f1)); stock initrd dropped"
+		echo "  casper/initrd <- initrd.img-$RTVER ($(du -h "$INITRD" | cut -f1)); repacked with ordered boot probes ($(du -h "$WORK/iso/casper/initrd" | cut -f1))"
 	else
 		die "$FULL/boot/initrd.img-$RTVER is missing.
      Without the kernel's own initramfs the image boots with no modules loaded
