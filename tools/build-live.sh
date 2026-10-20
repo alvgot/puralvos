@@ -801,6 +801,35 @@ case "$AUDIO_MEMBERS" in
 esac
 
 say "desktop entry hygiene"
+# Devede 4.21 ships a desktop entry whose TryExec/Exec name /usr/bin/devede,
+# while the package installs /usr/bin/devede_ng. On the first video build the
+# hygiene pass hid the entry as a dead launcher even though the application was
+# installed. Point it at the binary the package actually ships, and clear the
+# NoDisplay line an earlier run of this function may have added.
+DEV="$FULL/usr/share/applications/devede_ng.desktop"
+if [ -x "$FULL/usr/bin/devede_ng" ] && [ -f "$DEV" ]; then
+	sed -i -e 's#^TryExec=/usr/bin/devede$#TryExec=/usr/bin/devede_ng#' \
+	       -e 's#^Exec=/usr/bin/devede$#Exec=/usr/bin/devede_ng#' \
+	       -e '/^# Hidden by PuralvOS: the executable this entry names is not installed\.$/d' \
+	       -e '/^# See tools\/build-live.sh:fix_desktop_entries$/d' \
+	       -e '/^NoDisplay=true$/d' "$DEV"
+	echo "  devede menu entry: Exec corrected to /usr/bin/devede_ng"
+fi
+
+# PikoPixel ships a GNUstep desktop entry that launches through openapp(1).
+# openapp needs dpkg-architecture, which the toolchain trim removes, so the
+# menu entry dies with "Can't find the required application" while the
+# PikoPixel binary itself is installed and works. Point the entry at the
+# binary the package ships.
+PIKO="$FULL/usr/share/applications/PikoPixel.desktop"
+if [ -x "$FULL/usr/bin/PikoPixel" ] && [ -f "$PIKO" ]; then
+	sed -i -e 's#^Exec=/usr/bin/openapp PikoPixel %F$#Exec=/usr/bin/PikoPixel %F#' \
+	       -e '/^# Hidden by PuralvOS: the executable this entry names is not installed\.$/d' \
+	       -e '/^# See tools\/build-live.sh:fix_desktop_entries$/d' \
+	       -e '/^NoDisplay=true$/d' "$PIKO"
+	echo "  pikopixel menu entry: Exec corrected to /usr/bin/PikoPixel"
+fi
+
 fix_desktop_entries
 
 # Hide unwanted autostart entries (e.g., applications we don't want to start automatically)
@@ -2390,37 +2419,47 @@ say "protecting the full stack"
 # transaction (measured: purge-05-documents.log lists dolphin as REMOVED even
 # with the manual mark). It is the file manager the panel pins, so it is
 # installed back after the trim, next to Firefox.
-chroot "$FULL" apt-mark manual \
-	ubuntustudio-graphics ubuntustudio-fonts ubuntustudio-pipewire-config \
-	gimp gimp-data gimp-data-extras gir1.2-gimp-3.0 libgimp-3.0-0 \
-	inkscape lib2geom1.4.0 \
-	krita krita-data \
-	mypaint mypaint-data mypaint-data-extras mypaint-brushes \
-	libmypaint-1.5-1 libmypaint-common \
-	pencil2d pikopixel.app skanpage libksanecore6-1 \
-	synfigstudio kcolorchooser create-resources openclipart-svg \
-	blender blender-data xserver-xorg-input-wacom \
-	obs-studio obs-plugins libobs0t64 obs-pipewire-audio-capture \
-	kdenlive melt libmlt7 libmlt++7 libmlt-data \
-	subtitleeditor libsubtitleeditor0 devede devede_ng \
-	harvid xjadeo vcdimager wodim genisoimage cdrdao \
-	k3b k3b-data libk3b8t64 libk3b-extracodecs \
-	vlc mplayer dvd+rw-tools dvdauthor \
-	ardour carla mixxx lmms hydrogen csound musescore3 \
-	pipewire wireplumber jackd2 libjack-jackd2-0 \
-	libmlt7 libmlt++7 libmlt-data \
-	imagemagick imagemagick-7-common imagemagick-7.q16 \
-	libmagick++-7.q16-5 libmagickcore-7.q16-10 \
-	libmagickcore-7.q16-10-extra libmagickwand-7.q16-10 \
-	libgs10 ghostscript gsfonts \
-	libembree4-4 libimath-3-1-29t64 libopencolorio2.5 \
-	libopenexr-3-4-33 libopenimageio2.5 libopenvdb10.0t64 \
-	libopenxr-loader1 libshaderc1 \
-	libgdal39 libproj25 libgeotiff5 \
-	libopencv-contrib410 libopencv-core410 libopencv-imgproc410 \
-	libopencv-video410 libopencv-imgcodecs410 \
-	plasma-desktop plasma-workspace sddm systemsettings \
-	xserver-xorg-core >/dev/null
+# The mark list is applied package by package. One big apt-mark call aborts on
+# the first name that is not installed — the video-optical batch is disabled
+# for the full image, so the disc-burning and authoring tools on this list are
+# absent, and an aborted mark means none of the marks land and the trim's
+# autoremove takes the whole graphics stack with it (measured: gimp, krita,
+# blender, skanpage, darktable and hugin all came back as orphans).
+# Mark packages one by one, ignoring missing ones. Use apt-cache to verify
+# the package exists before trying to mark it, to avoid apt-mark failing on
+# packages that don't exist in the archive (e.g. devede_ng was the package
+# name on 26.04; on 26.10 it's devede).
+MARK_GROUPS=(
+	"ubuntustudio-graphics ubuntustudio-fonts ubuntustudio-pipewire-config"
+	"gimp gimp-data gimp-data-extras gir1.2-gimp-3.0 libgimp-3.0-0"
+	"inkscape lib2geom1.4.0"
+	"krita krita-data"
+	"mypaint mypaint-data mypaint-data-extras mypaint-brushes libmypaint-1.5-1 libmypaint-common"
+	"pencil2d pikopixel.app skanpage libksanecore6-1"
+	"synfigstudio kcolorchooser create-resources openclipart-svg"
+	"blender blender-data xserver-xorg-input-wacom"
+	"obs-studio obs-plugins libobs0t64 obs-pipewire-audio-capture"
+	"kdenlive melt libmlt7 libmlt++7 libmlt-data"
+	"subtitleeditor libsubtitleeditor0 devede"
+	"vlc mplayer"
+	"ardour audacity carla mixxx lmms hydrogen csound musescore3"
+	"pipewire wireplumber jackd2 libjack-jackd2-0"
+	"imagemagick imagemagick-7-common imagemagick-7.q16"
+	"libmagick++-7.q16-5 libmagickcore-7.q16-10"
+	"libmagickcore-7.q16-10-extra libmagickwand-7.q16-10"
+	"libgs10 ghostscript gsfonts"
+	"libembree4-4 libimath-3-1-29t64 libopencolorio2.5"
+	"libopenexr-3-4-33 libopenimageio2.5 libopenvdb10.0t64"
+	"libopenxr-loader1 libshaderc1"
+	"libgdal39 libproj25 libgeotiff5"
+	"libopencv-contrib410 libopencv-core410 libopencv-imgproc410"
+	"libopencv-video410 libopencv-imgcodecs410"
+	"plasma-desktop plasma-workspace sddm systemsettings"
+	"xserver-xorg-core"
+)
+for group in "${MARK_GROUPS[@]}"; do
+	chroot "$FULL" apt-mark manual $group >/dev/null 2>&1 || true
+done
 
 say "removing the audio trim"
 TRIM_REMOVED=0
