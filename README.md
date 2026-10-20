@@ -87,7 +87,7 @@ in the name:
 | --- | --- |
 | audio | `out/puralvos-audio-20261020-0103.iso` |
 | video | `out/puralvos-video-20261020-0239.iso` |
-| graphics | `out/puralvos-graphics-20261020-0642.iso` |
+| graphics | `out/puralvos-graphics-20261020-0827.iso` |
 | full | `out/puralvos-full-20261019-1855.iso` |
 
 The existing audio and full ISOs were renamed from `puralvos-live-*` to this

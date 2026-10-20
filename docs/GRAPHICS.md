@@ -319,15 +319,25 @@ kcolorchooser window after 0s
 
 ## 6. Build result
 
+> The production build described in this section is the one on disk:
+> `out/puralvos-graphics-20261020-0827.iso`, 6.57 GB, sha256
+> `3defda11f4648d6fcdd71065ef82696032b38a855d7ad5da6d87028ff58ce8b5`.
+> The earlier `0642` build is superseded; it was built before the dark
+> look-and-feel package was removed (it auto-applied dark and wrote a
+> dark `~/.config/kdedefaults`, which won over every theme setting), and
+> before the boot-report autostart was added. The `0556` build is the
+> pre-fix one that was missing GIMP, Inkscape, Krita, Skanpage and
+> PikoPixel; both are kept as the record of the failures.
+
 Production build:
 
 | | |
 | --- | --- |
 | Command | `PURALVOS_RESUME=0 tools/build-live.sh --keep` |
 | Log | `/tmp/opencode/build-graphics-20261020-0636.log` |
-| ISO | `out/puralvos-graphics-20261020-0642.iso` |
+| ISO | `out/puralvos-graphics-20261020-0827.iso` |
 | Size | 6.57 GB |
-| SHA-256 | `e700c3369f4ce07a0f4b3f1940021afd80db321e267d2eb9e9a82000188abc8c` |
+| SHA-256 | `3defda11f4648d6fcdd71065ef82696032b38a855d7ad5da6d87028ff58ce8b5` |
 | Installed packages | 2378 |
 | Top layer | 661 MB |
 | Squashfs | 302 MB |
@@ -370,7 +380,7 @@ dpkg --audit             clean
 Final boot:
 
 ```
-./scripts/kvmtest.sh out/puralvos-graphics-20261020-0642.iso \
+./scripts/kvmtest.sh out/puralvos-graphics-20261020-0827.iso \
     puralvos-graphics-final 300 30
 PURALVOS_DESKTOP_READY 24.00
 ```
