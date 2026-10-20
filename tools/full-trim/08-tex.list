@@ -1,0 +1,23 @@
+# Audio-only trim, batch 08 of 12: TeX.
+#
+# Vetted list. tools/build-live.sh applies these files in numeric order with:
+#
+#     apt-get purge -y --auto-remove <the names below>
+#
+# The order is part of the verification: this working copy was purged with
+# these batches in this order, and the audio anchors were checked after
+# every batch. Do not merge or reorder the files.
+
+texlive-base
+texlive-binaries
+texlive-latex-base
+texlive-latex-recommended
+tex-common
+lmodern
+cm-super-minimal
+cm-super-x11
+libkpathsea6
+libptexenc1
+libsynctex2
+libtexlua53-5
+fonts-lmodern

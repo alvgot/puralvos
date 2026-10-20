@@ -1,0 +1,33 @@
+# Audio-only trim, batch 09 of 12: tracing and low-level toolchain.
+#
+# Vetted list. tools/build-live.sh applies these files in numeric order with:
+#
+#     apt-get purge -y --auto-remove <the names below>
+#
+# The order is part of the verification: this working copy was purged with
+# these batches in this order, and the audio anchors were checked after
+# every batch. Do not merge or reorder the files.
+#
+# gdb, gcc-15-base, gcc-16-base and the cpp chain were candidates and are NOT in this batch: plasma-workspace reaches cpp through x11-xserver-utils, and gcc-16-base is pinned by libgcc-s1. See excludes.list.
+#
+# 26.10 rebase: the kernel ABI moved 7.0.0-30 -> 7.3.0-9; the two tool
+# names follow. The intent is unchanged: tools for the replaced generic kernel go.
+
+bpfcc-tools
+bpftool
+bpftrace
+libbpfcc
+python3-bpfcc
+linux-perf
+linux-tools-7.3.0-9
+linux-tools-7.3.0-9-generic
+linux-tools-common
+trace-cmd
+libtraceevent1
+libtraceevent1-plugin
+libtracefs1
+binutils
+binutils-common
+binutils-x86-64-linux-gnu
+libbinutils
+make

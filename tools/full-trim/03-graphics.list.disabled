@@ -1,0 +1,70 @@
+# Audio-only trim, batch 03 of 12: graphics, photography, and raster/vector imaging.
+#
+# Vetted list. tools/build-live.sh applies these files in numeric order with:
+#
+#     apt-get purge -y --auto-remove <the names below>
+#
+# The order is part of the verification: this working copy was purged with
+# these batches in this order, and the audio anchors were checked after
+# every batch. Do not merge or reorder the files.
+
+gimp
+gimp-data
+gimp-data-extras
+libgimp-3.0-0
+gir1.2-gimp-3.0
+krita
+krita-data
+digikam
+digikam-data
+digikam-private-libs
+hugin
+hugin-data
+hugin-tools
+inkscape
+lib2geom1.4.0
+mypaint
+mypaint-data
+mypaint-data-extras
+mypaint-brushes
+libmypaint-1.5-1
+libmypaint-common
+kcolorchooser
+pencil2d
+photocollage
+picplanner
+pikopixel.app
+rapid-photo-downloader
+entangle
+gir1.2-entangle-0.1
+displaycal
+argyll
+argyll-ref
+enblend
+enfuse
+gwenview
+gwenview-doc
+kamera
+skanpage
+openclipart-svg
+create-resources
+imagemagick
+imagemagick-7-common
+imagemagick-7.q16
+libmagick++-7.q16-5
+libmagickcore-7.q16-10
+libmagickcore-7.q16-10-extra
+libmagickwand-7.q16-10
+fig2dev
+graphviz
+libgvc7
+libgvplugin-gd8
+libgvplugin-pango8
+libgvpr2
+libcdt6
+libcgraph8
+libpathplan4
+libxdot4
+dvisvgm
+netpbm
+libnetpbm11t64

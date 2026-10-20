@@ -26,14 +26,14 @@
 # the lowlatency kernel only as a recommendation.
 
 linux-generic
-linux-generic-hwe-26.04
-linux-generic-hwe-26.04-edge
+linux-generic-hwe-26.10
+linux-generic-hwe-26.10-edge
 linux-image-generic
-linux-image-generic-hwe-26.04
-linux-image-generic-hwe-26.04-edge
+linux-image-generic-hwe-26.10
+linux-image-generic-hwe-26.10-edge
 linux-headers-generic
-linux-headers-generic-hwe-26.04
-linux-headers-generic-hwe-26.04-edge
+linux-headers-generic-hwe-26.10
+linux-headers-generic-hwe-26.10-edge
 
 # --- general purpose desktop ----------------------------------------------
   #

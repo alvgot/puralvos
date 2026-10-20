@@ -1,0 +1,40 @@
+# Audio-only trim, batch 11 of 12: geospatial libraries (GDAL/PROJ chain).
+#
+# Vetted list. tools/build-live.sh applies these files in numeric order with:
+#
+#     apt-get purge -y --auto-remove <the names below>
+#
+# The order is part of the verification: this working copy was purged with
+# these batches in this order, and the audio anchors were checked after
+# every batch. Do not merge or reorder the files.
+#
+# 26.10 rebase: soname bumps libgdal38->39, libhdf5-310->320,
+# libhdf5-hl-310->320. Nothing else changed.
+
+gdal-data
+gdal-plugins
+libgdal39
+proj-bin
+proj-data
+libproj25
+libgeotiff5
+libgeos-c1t64
+libgeos3.14.1
+libspatialite8t64
+librttopo1
+libfreexl1
+libhdf4-0
+libhdf5-320
+libhdf5-hl-320
+libnetcdf22
+libcfitsio10t64
+libarmadillo15
+libarpack2t64
+libsuperlu7
+libumfpack6
+libcholmod5
+libamd3
+libcamd3
+libccolamd3
+libcolamd3
+libsuitesparseconfig7

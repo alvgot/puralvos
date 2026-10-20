@@ -48,17 +48,22 @@ import re
 import subprocess
 import sys
 
+# The Ubuntu Studio release this image is built from. The -hwe- metapackages
+# embed it and the STALE filter compares against it, so a rebase is one edit
+# here.
+RELEASE = "26.10"
+
 # Candidate metapackages, best first. "realtime" is a real PREEMPT_RT build;
 # "lowlatency" is the generic kernel with low latency boot arguments and is
 # only acceptable as a fallback.
 CANDIDATES = {
     "realtime": [
         "linux-realtime",
-        "linux-realtime-hwe-26.04",
+        "linux-realtime-hwe-" + RELEASE,
     ],
     "lowlatency": [
         "linux-lowlatency",
-        "linux-lowlatency-hwe-26.04",
+        "linux-lowlatency-hwe-" + RELEASE,
     ],
 }
 
@@ -67,7 +72,7 @@ CANDIDATES = {
 # linux-lowlatency-hwe-26.04, which is an obvious packaging leftover, and a
 # kernel metapackage whose name names a different release than the one it pulls
 # is not something to put on a machine.
-STALE = re.compile(r"-hwe-(?!26\.04$)")
+STALE = re.compile(r"-hwe-(?!" + re.escape(RELEASE) + r"$)")
 
 
 def apt(args, chroot=None):
@@ -132,7 +137,7 @@ def choose(policy, chroot=None, verbose=True):
     order = CANDIDATES[policy] + CANDIDATES["realtime" if policy != "realtime" else "lowlatency"]
 
     for pkg in order:
-        if STALE.search(pkg) and not pkg.endswith("26.04"):
+        if STALE.search(pkg) and not pkg.endswith(RELEASE):
             notes.append("skipped %s: names a release this base is not" % pkg)
             continue
         ok, version = candidate_available(pkg, chroot)

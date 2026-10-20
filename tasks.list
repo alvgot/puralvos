@@ -3,7 +3,7 @@
 # What PuralvOS installs, and nothing else.
 #
 # This list is not invented. It is the Ubuntu Studio Installer's own task table,
-# taken from backend.py in ubuntustudio-installer 2.0.7 (resolute):
+# taken from backend.py in ubuntustudio-installer 2.0.7 (stonking):
 #
 #     METAPACKAGES = (
 #         "ubuntustudio-lowlatency-settings",
@@ -23,7 +23,7 @@
 # know which combination of applications actually cooperates with PipeWire,
 # which plugins build, and which plugin hosts need which libraries.
 #
-# Resolved against Ubuntu 26.04.1 LTS (resolute), ubuntustudio-* 26.04.20.
+# Resolved against Ubuntu 26.10 (stonking), ubuntustudio-* 26.10.20.
 
 # --- the three tasks that define the product -------------------------------
 

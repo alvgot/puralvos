@@ -1,6 +1,6 @@
 # PuralvOS
 
-An audio, video and graphics workstation built on **Ubuntu Studio 26.04.1 LTS**.
+An audio, video and graphics workstation built on **Ubuntu Studio 26.10**.
 
 Named for the two of us: **Pur**ia + **Alv**.
 
@@ -25,14 +25,14 @@ Three things define it:
 
 | | |
 | --- | --- |
-| Base | Ubuntu Studio 26.04.1 LTS "Resolute Raccoon" |
+| Base | Ubuntu Studio 26.10 "Stonking Stingray" |
 | Codename | `resolute` |
 | Support | until April 2029 |
 | Kernel | `linux-lowlatency` 7.0, from the archive |
 | Desktop | Plasma (KDE), inherited from the base |
 | Architecture | amd64 |
 
-ISO: `ubuntustudio-26.04.1-desktop-amd64.iso`, 6.6 GB, checksum pinned in
+ISO: `ubuntustudio-26.10-desktop-amd64.iso`, 6.6 GB, checksum pinned in
 [`base/CHECKSUMS`](base/CHECKSUMS) and verified on download.
 
 ## On proprietary software
@@ -131,7 +131,7 @@ iterating. See the note on the resume marker in `tools/build-live.sh`.
 
 **`linux-realtime`, discovered at build time, not hardcoded.**
 
-This one caught us out. On Ubuntu 26.04:
+This one caught us out. On Ubuntu 26.10:
 
 ```
 linux-lowlatency   Depends: linux-image-generic     ← the GENERIC kernel
@@ -141,7 +141,7 @@ linux-realtime     Depends: linux-image-realtime    ← a real PREEMPT_RT build
 `linux-lowlatency` is the generic kernel with low-latency boot arguments. It
 still preempts cooperatively and will still glitch. And the same name means
 different things per release — on 24.04 it pulls `linux-image-lowlatency`, on
-26.04 it pulls `linux-image-generic` — so a hardcoded name would have been
+26.10 it pulls `linux-image-generic` — so a hardcoded name would have been
 right on one base and silently wrong on the other.
 
 `tools/kernel-select.py` asks apt what the kernel actually depends on and

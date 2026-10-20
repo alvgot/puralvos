@@ -47,7 +47,7 @@ def load_tasks(path):
     tasks.list is prose with package names inside it, organised under
     headings like:
 
-        # --- the three tasks that define the product ---
+        # --- the one task that defines the product ---
 
     The heading is what says what kind of entry it is. The first pass here
     guessed from the package name and got it wrong: it filed
@@ -73,7 +73,7 @@ def load_tasks(path):
     # packages. Matched on the words actually used in tasks.list, so if it is
     # reworded this reports zero metapackages and the difference is visible
     # rather than silent.
-    meta_sections = ("define the product",)
+    meta_sections = ("define the product", "defines the product")
 
     meta, pkgs, sections = [], [], []
     current = ""

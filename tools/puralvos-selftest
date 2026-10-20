@@ -310,9 +310,20 @@ say "--- tier 0: system"
 	&& result tier0 PASS "dbus-session-bus" \
 	|| result tier0 FAIL "dbus-session-bus" "no socket at ${SessionDir}/bus"
 
-pgrep -x dbus-daemon >/dev/null 2>&1 \
-	&& result tier0 PASS "dbus-daemon-running" \
-	|| result tier0 FAIL "dbus-daemon-running" "no dbus-daemon process"
+# The bus process, under whichever implementation is running it.
+#
+# Ubuntu 26.10 moved both buses to dbus-broker; 26.04 ran dbus-daemon. The
+# desktop and every application depend on the bus, not on which implementation
+# serves it, and on 26.10 the old check reported a healthy bus as missing.
+# Accept either, and say which one answered.
+if pgrep -x dbus-broker >/dev/null 2>&1; then
+	result tier0 PASS "dbus-daemon-running" "dbus-broker"
+elif pgrep -x dbus-daemon >/dev/null 2>&1; then
+	result tier0 PASS "dbus-daemon-running" "dbus-daemon"
+else
+	result tier0 FAIL "dbus-daemon-running" \
+		"no dbus-daemon or dbus-broker process"
+fi
 
 # The compositor, under whichever name it is running.
 #
@@ -979,11 +990,18 @@ LAUNCH_TIMEOUT=${LAUNCH_TIMEOUT:-60}
 # Close whatever an application left behind, whether or not it worked.
 reap() {
 	local bin=$1 pid=$2
-	pkill -f "$bin" >/dev/null 2>&1
+	# -x, not -f. A launch test for a wrapper entry (Hexter is "sh -c
+	# 'jack-dssi-host ...'") hands reap bin="sh", and pkill -f sh matches
+	# every command line containing "sh" - which includes the self test
+	# itself ("/bin/bash .../puralvos-selftest") and plasmashell. The first
+	# run that reached the Hexter entry killed the test and the desktop with
+	# it. -x matches the process name exactly, so reap only ever reaches the
+	# shell (or application) that this test actually launched.
+	pkill -x "$bin" >/dev/null 2>&1
 	kill "$pid" >/dev/null 2>&1
 	sleep 1
 	kill -9 "$pid" >/dev/null 2>&1
-	pkill -9 -f "$bin" >/dev/null 2>&1
+	pkill -9 -x "$bin" >/dev/null 2>&1
 }
 
 launch_test() {
@@ -1003,7 +1021,7 @@ launch_test() {
 			up=1
 			break
 		fi
-		if ! kill -0 "$pid" 2>/dev/null && ! pgrep -f "$bin" >/dev/null 2>&1; then
+		if ! kill -0 "$pid" 2>/dev/null && ! pgrep -x "$bin" >/dev/null 2>&1; then
 			exited=1
 			break
 		fi
