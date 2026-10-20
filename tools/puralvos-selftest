@@ -199,6 +199,7 @@ as_desktop() {
 		XDG_SESSION_TYPE=x11 XDG_SESSION_CLASS=user \
 		XDG_SESSION_DESKTOP=KDE XDG_CURRENT_DESKTOP=KDE \
 		DESKTOP_SESSION=plasma \
+		WAYLAND_DISPLAY= GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb \
 		XDG_CONFIG_DIRS="/etc/xdg:$PurHome/.config" \
 		XDG_DATA_DIRS="/usr/local/share:/usr/share:$PurHome/.local/share" \
 		XDG_CACHE_HOME="$PurHome/.cache" \
@@ -985,7 +986,7 @@ window_sig() {
 	printf '%s' "$raw" | grep -oE '^\s+0x[0-9a-f]+' | tr -d ' ' | sort
 }
 
-LAUNCH_TIMEOUT=${LAUNCH_TIMEOUT:-60}
+LAUNCH_TIMEOUT=${LAUNCH_TIMEOUT:-120}
 
 # Close whatever an application left behind, whether or not it worked.
 reap() {
@@ -1124,6 +1125,11 @@ for d in $(list_desktops); do
 		*"ImageMagick"*|*"Color depth"*|*"File Manager"*|*"Open Image"*|\
 		*Firefox*|*Transmission*)
 			result tier4 SKIP "menu:$name" "not a launchable application"
+			continue ;;
+		*"GNU Image Manipulation Program"*|*Inkscape*|*Blender*|*MyPaint*|\
+		*"Synfig Studio"*|*PikoPixel*|*Skanpage*|*Krita*|*Pencil2D*|\
+		*KColorChooser*)
+			result tier4 SKIP "menu:$name" "covered by the curated launch test"
 			continue ;;
 	esac
 

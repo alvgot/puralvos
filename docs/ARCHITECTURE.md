@@ -6,8 +6,8 @@ How the two images are built, and the one decision that actually matters.
 
 | build | boots to | installs to disk | how |
 | --- | --- | --- | --- |
-| **PuralvOS Live** (default) | full workstation, live | no | `tools/build-live.sh` |
-| **PuralvOS** | full workstation, live | yes, stock Ubuntu installer | `PURALVOS_INSTALLER=1 tools/build-live.sh` |
+| **PuralvOS Graphics Live** (default) | graphics workstation, live | no | `tools/build-live.sh` |
+| **PuralvOS Graphics** | graphics workstation, live | yes, stock Ubuntu installer | `PURALVOS_INSTALLER=1 tools/build-live.sh` |
 
 Both are built from the same curated root filesystem. The only difference is
 whether snapd is kept, because the stock installer (`ubuntu-desktop-bootstrap`)
@@ -187,7 +187,7 @@ for exactly this reason.
       the `audio` group. **Without this the workstation installs fine and
       still cannot run audio at real time priority.** It is the single most
       important non-package step in the whole build.
-- [ ] audio, video and graphics applications each launch
+- [ ] the graphics applications each launch; the launch set mirrors `tasks.list`
 - [ ] PipeWire reports a sink
 - [ ] the general kernel is absent, so an upgrade cannot boot the wrong one
 

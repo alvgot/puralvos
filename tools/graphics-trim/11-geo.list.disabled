@@ -1,12 +1,11 @@
-# Video trim, batch 11 of 12 (disabled): geospatial libraries (GDAL/PROJ chain).
+# Graphics trim, batch 11 of 12 (disabled): geospatial libraries (GDAL/PROJ chain).
 #
-# Vetted list. tools/build-live.sh applies these files in numeric order with:
+# Disabled because Blender depends on this chain through OpenImageIO:
 #
-#     apt-get purge -y --auto-remove <the names below>
+#     blender -> libopenimageio2.5 -> libopencv-imgcodecs410 -> libgdal39
 #
-# The order is part of the verification: this working copy was purged with
-# these batches in this order, and the video anchors were checked after
-# every batch. Do not merge or reorder the files.
+# The list is retained as the measured record; it is not applied by
+# tools/build-live.sh.
 #
 # 26.10 rebase: soname bumps libgdal38->39, libhdf5-310->320,
 # libhdf5-hl-310->320. Nothing else changed.

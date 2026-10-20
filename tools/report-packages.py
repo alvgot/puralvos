@@ -63,7 +63,7 @@ RULES = [
      "Snapd, its libraries, Plasma's snap backend, and Thunderbird, which "
      "is itself a snap. This is the largest single saving in the "
      "build and it is not a package count: the stock image carries 14 snaps "
-     "and about 4 GB of /var/lib/snapd, against a whole 69-package trim that "
+     "and about 4 GB of /var/lib/snapd, against the 1072-package graphics trim, which "
      "saves far less. Firefox and Thunderbird go with it, because in the "
      "archive those packages are transitional wrappers whose only job is to "
      "install the snap."),

@@ -21,9 +21,9 @@
 # machine might boot the wrong one after a routine upgrade, which for a media
 # workstation is a latency regression nobody would notice until a session.
 #
-# The order matters. linux-lowlatency is installed in tasks.list FIRST, then
+# The order matters. linux-realtime is installed in tasks.list FIRST, then
 # the general kernel is removed. Removing first would let apt decide to keep
-# the lowlatency kernel only as a recommendation.
+# the realtime kernel only as a recommendation.
 
 linux-generic
 linux-generic-hwe-26.10
@@ -40,13 +40,13 @@ linux-headers-generic-hwe-26.10-edge
   # LibreOffice is REMOVED. This section used to say the opposite, on the
   # argument that both people who use this machine write things and a
   # workstation that cannot open a .odt or a .docx has a papercut in it every
-  # day. That argument was reasonable and it lost anyway: the video image
+  # day. That argument was reasonable and it lost anyway: the graphics image
   # does not ship LibreOffice. The reversal is recorded, not silently edited,
   # so that the next person can tell a reconsidered decision from one that was
   # never made.
   #
   # The exact vetted package set is batch 04-libreoffice.list in
-  # tools/video-trim, applied by tools/build-live.sh.
+  # tools/graphics-trim, applied by tools/build-live.sh.
 
 # --- packaging and app distribution ---------------------------------------
   #
@@ -58,7 +58,7 @@ linux-headers-generic-hwe-26.10-edge
   # upgrade", a parallel system nobody audits is a liability.
   #
   # The stock Ubuntu Studio live image carries 4 GB of it: 14 snaps and 2 GB of
-  # .snap payloads under /var/lib/snapd. That is more than the whole 69-package
+  # .snap payloads under /var/lib/snapd. That is more than the whole graphics
   # trim saves, so this is the largest single saving available in the build.
   #
   # The snaps it carries are firefox, thunderbird, gnome-46-2404, core24,
@@ -95,7 +95,7 @@ synaptic
 # --- hardware nobody doing media needs ------------------------------------
 #
 # Printer drivers, firmware updaters and PCMCIA/CardBus support come from the
-# general desktop. A workstation that only does audio and video does not need
+# general desktop. A workstation that only does graphics does not need
 # to know what a LaserJet 4000 is.
 
 hplip
@@ -150,31 +150,39 @@ ubuntu-edu-music
 # --- puredata (Pd) ---------------------------------------------------------
 #
 # Pure Data is a visual programming language for multimedia. While it is an
-# audio tool, it is not required for the core audio, video, and graphics
-# workstation use case. Users who need it can install it separately.
+# audio tool, it is not required for the core graphics workstation use case.
+# Users who need it can install it separately.
 puredata
 puredata-data
 puredata-doc
 puredata-utils
 
-# --- the video trim --------------------------------------------------------
+# --- the graphics trim -----------------------------------------------------
 #
-# The stock image leaks in a general-purpose desktop; tools/video-trim holds
+# The stock image leaks in a general-purpose desktop; tools/graphics-trim holds
 # the vetted lists that take it back out. Each list was simulated and then
-# really purged in a reconstructed working copy, in order, with the video
+# really purged in a reconstructed working copy, in order, with the graphics
 # anchors checked after every batch. build-live.sh applies them with
 # --auto-remove and a closing autoremove --purge.
 #
-# Three lists are deliberately disabled on this branch because their removals
-# take video product packages with them. They stay in the tree as
+# Five lists are deliberately disabled on this branch because their removals
+# take graphics product packages with them. They stay in the tree as
 # .list.disabled so the decision is visible:
 #
-#   * 07-online-accounts: kdenlive -> libkf6purpose-bin -> libkaccounts6-2.
+#   * 03-graphics: this is the product bundle, not a trim.
+#   * 07-online-accounts: Skanpage -> qml6-module-org-kde-purpose ->
+#     libkaccounts6-2.
+#   * 10-gnustep: PikoPixel is a GNUstep application; the batch removes its
+#     runtime.
 #   * 11-geo: blender -> libopenimageio2.5 -> libopencv-imgcodecs410 ->
 #     libgdal39.
-#   * 12-ml-video: libmlt7 -> libopencv-contrib410 and friends, and
-#     kdenlive -> gstreamer1.0-plugins-bad -> libonnxruntime1.23,
-#     libtensorflow-lite2.14.1, libopenni2-0.
+#   * 12-ml-video: libmlt7 -> libopencv-contrib410 and friends; Krita and
+#     Synfig link MLT.
+#
+# 05-documents is active but reduced. The first attempt removed GIMP, Inkscape
+# and Krita through libpoppler-glib8t64, libpoppler-qt6-3t64 and gsfonts-other.
+# The vetted list now removes Okular and the standalone viewers, and keeps the
+# poppler libraries, Ghostscript and the font package.
 #
 # The lists are the execution record, batch by batch; this file keeps the
 # decisions that are NOT obvious from a package name:
@@ -188,22 +196,22 @@ puredata-utils
 #     gear must keep working out of the box.
 #
 #   * libplacebo360 is a hard dependency of ffmpeg. A GPU batch that removed
-#     it answered with ffmpeg, obs-studio, the ubuntustudio branding packages
-#     and the desktop in the REMOVED list, so it stays.
-#
-#   * xjadeo and harvid are NOT removed: xjadeo is a video product
-#     application, and its video output goes through harvid.
+#     it answered with ffmpeg and the desktop in the REMOVED list, so it stays.
 #
 #   * gdb, gcc-15-base, gcc-16-base and the cpp chain are NOT removed:
 #     plasma-workspace reaches cpp through x11-xserver-utils, and gcc-16-base
 #     is pinned by libgcc-s1. Purging them simulates to a REMOVED list with
 #     the desktop in it.
 #
-# ImageMagick is NOT removed even though the graphics applications are:
-# Devede and Synfig depend on it at runtime.
+#   * ffmpeg, libmlt7, libmlt++7 and libmlt-data are NOT removed: Krita,
+#     Pencil2D and ImageMagick depend on ffmpeg, and Krita and Synfig link
+#     MLT. The video front ends and melt are removed by 02-video-optical.
 #
-# The video anchors (kdenlive, blender, obs-studio, vlc, ffmpeg,
-# subtitleeditor, synfigstudio, qprompt, xjadeo, devede, k3b, melt, MLT,
-# OpenImageIO and the realtime kernel) were checked after every batch. Any
-# package wanted back comes back by adding it to tasks.list, not by puncturing
-# a batch here.
+#   * ImageMagick is NOT removed: Synfig and the graphics stack use it at
+#     runtime.
+#
+# The graphics anchors (gimp, inkscape, krita, blender, mypaint, pencil2d,
+# pikopixel.app, skanpage, synfigstudio, kcolorchooser, ffmpeg, MLT,
+# OpenImageIO, GDAL and the realtime kernel) were checked after every batch.
+# Any package wanted back comes back by adding it to tasks.list, not by
+# puncturing a batch here.

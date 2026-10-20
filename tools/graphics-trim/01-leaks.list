@@ -1,11 +1,11 @@
-# Video trim, batch 01 of 12: input methods, printing, the snap store, and other stock-desktop leaks.
+# Graphics trim, batch 01 of 12: input methods, printing, the snap store, and other stock-desktop leaks.
 #
 # Vetted list. tools/build-live.sh applies these files in numeric order with:
 #
 #     apt-get purge -y --auto-remove <the names below>
 #
 # The order is part of the verification: this working copy was purged with
-# these batches in this order, and the video anchors were checked after
+# these batches in this order, and the graphics anchors were checked after
 # every batch. Do not merge or reorder the files.
 #
 # 26.10 rebase: fcitx-googlepinyin and fcitx-module-cloudpinyin no longer

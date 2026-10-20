@@ -397,7 +397,7 @@ the next thing to test.
 
 ---
 
-## 7. The 26.10 rebase (2026-10-19)
+## 9. The 26.10 rebase (2026-10-19)
 
 The base moved to Ubuntu Studio 26.10 "Stonking Stingray" and everything was
 rebuilt with the same package lists. What the rebase forced:
@@ -440,7 +440,7 @@ rebuilt with the same package lists. What the rebase forced:
 
 ---
 
-## 8. The video-only branch (2026-10-20)
+## 10. The video-only branch (2026-10-20)
 
 `video-only` was cut from `audio-only` at `349921d`. The product is
 `ubuntustudio-video` plus `linux-realtime`, with the audio and graphics
@@ -487,4 +487,99 @@ show Blender and Subtitle Editor open; a clean Xvfb run opens Synfig in under
 five seconds. The full table is in [VIDEO.md](VIDEO.md).
 
 The audio branch's 90 s boot-gap investigation is unchanged and still waiting
-on the new audio ISO's `boot-report.txt`. The graphics-only branch is next.
+on the new audio ISO's `boot-report.txt`. The graphics-only branch follows.
+
+---
+
+## 11. The graphics-only branch (2026-10-20)
+
+`graphics-only` was cut from `video-only` at `aa310ca`. The product is
+`ubuntustudio-graphics` plus `linux-realtime`, with the audio, video,
+photography and publishing task bundles removed. The graphics applications,
+PipeWire/JACK and the libraries the editors link are kept.
+
+What this branch changed:
+
+- rewrote `tasks.list` for graphics and regenerated the package declaration
+  (7 packages, `ubuntustudio-graphics=meta`, `linux-image-realtime=pkg`);
+- renamed `tools/video-trim` to `tools/graphics-trim`, made the video/optical
+  batch a graphics batch, and wrote an audio-application batch that keeps the
+  audio runtime;
+- disabled five batches after an apt dependency audit, because each takes a
+  product package with it:
+  - `03-graphics`: this is the product, not a leak;
+  - `07-online-accounts`: Skanpage → `qml6-module-org-kde-purpose` →
+    `libkaccounts6-2`;
+  - `10-gnustep`: PikoPixel is a GNUstep application;
+  - `11-geo`: Blender → OpenImageIO → OpenCV → GDAL;
+  - `12-ml-video`: Krita/MLT → OpenCV, ONNX and TensorFlow;
+- reduced `05-documents`: the first build removed GIMP, Inkscape and Krita
+  through `libpoppler-glib8t64`, `libpoppler-qt6-3t64` and `gsfonts-other`.
+  The revised batch removes 51 packages (Okular, Mupdf, poppler-utils) and
+  keeps the shared poppler libraries, Ghostscript and the font package;
+- kept `ffmpeg` and the MLT libraries: Krita, Pencil2D and ImageMagick depend
+  on FFmpeg, and Krita and Synfig link MLT;
+- rebranded os-release, issue, GRUB, ISO name and volume label for PuralvOS
+  Graphics, and pinned the graphics applications in both panel layouts;
+- fixed PikoPixel's desktop entry. Its `Exec` called `openapp`, which needs
+  `dpkg-architecture`; the toolchain trim removes that package. The entry now
+  calls `/usr/bin/PikoPixel` directly;
+- converted the self test to the graphics launch set and made the launch tests
+  force X11. GIMP, Inkscape, Blender, MyPaint and Synfig had been reported as
+  timeouts because the Wayland session never created X11 windows for the
+  `xwininfo` probe; the screenshots showed them open;
+- raised the window timeout from 60 s to 120 s and skipped curated
+  applications in the menu sweep so each is tested once.
+
+Production build:
+
+```
+ISO       out/puralvos-graphics-20261020-0642.iso   6.57 GB
+sha256    e700c3369f4ce07a0f4b3f1940021afd80db321e267d2eb9e9a82000188abc8c
+packages  2378
+kernel    7.3.0-9-realtime (PREEMPT_RT)
+desktop   PURALVOS_DESKTOP_READY 24.00 (KVM, unthrottled)
+audit     dpkg --audit clean
+top layer 661 MB
+squashfs  302 MB
+```
+
+The build removed 1072 packages: 572 in `01-leaks`, 235 in `02-audio`, 25 in
+`02-video-optical`, 98 in `04-libreoffice`, 51 in `05-documents`, 54 in
+`06-services`, 19 in `08-tex` and 18 in `09-toolchain`.
+
+The verification build is
+`/tmp/opencode/selftest-out/puralvos-graphics-20261020-0708.iso`, sha256
+`e92509199d40957797651ef5e671725081cb6577b2277b58a1755f8d979463f2`. It reaches
+the desktop at **23.98 s** and the in-guest self test reports **86 pass,
+3 fail, 1 slow, 27 skip** in 135 s. Its `dpkg-database` line says 2379
+packages because `dracut` remains in config-files state; 2378 are installed.
+All ten curated graphics applications launch: GIMP, Inkscape, Krita, Blender,
+MyPaint, Pencil2D, PikoPixel, Skanpage, Synfig Studio and KColorChooser.
+
+The three failures are environment or base utilities, not graphics
+applications:
+
+- `menu:Keyboard layout viewer` — `double free or corruption (out)`, the same
+  base utility crash seen on the video branch;
+- `menu:cpupower-gui` — exits with `Use "gapplication help COMMAND"`; QEMU has
+  no cpufreq driver;
+- `menu:Additional Drivers` — polkit cannot open a controlling terminal in the
+  headless session.
+
+The 27 skips are the expected non-launchable entries, the curated applications
+covered by tier 4, the real-time checks that need hardware (`cpu-governor`,
+`swappiness`, `isolcpus`, `nohz_full`, `threadirqs`, `jack-xruns`) and
+`udev-audio-rules`, which is SLOW because the base has no audio udev rule.
+
+The first graphics production attempt (`out/puralvos-graphics-20261020-0556.iso`)
+is not a release candidate: it was missing GIMP, Inkscape, Krita, Skanpage and
+PikoPixel. The second attempt at 0606 restored the applications, and the 0642
+build above is the one that boots and passes the verification. The full
+dependency record is in [GRAPHICS.md](GRAPHICS.md).
+
+The graphics branch does not solve the audio branch's 90 s boot gap, and it has
+not been tested on real hardware with a GPU, tablet or scanner. Every runtime
+check was made in QEMU. The stock icon/Plasma/menu packages also remain Ubuntu
+Studio's, which is the largest branding gap; see
+[BRANDING.md](BRANDING.md).

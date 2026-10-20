@@ -1,10 +1,11 @@
-# Audio applications and instrument/effects packages. The video branch keeps
-# the audio runtime (PipeWire, libjack-jackd2-0, osspd) because editors and OBS
-# need it, but it does not ship a DAW, a soft synth, or a guitar rig.
+# Audio applications and instrument/effects packages. The graphics product
+# keeps the audio runtime (PipeWire, libjack-jackd2-0, osspd) because the
+# graphics applications use it for preview audio, but it does not ship a DAW,
+# a soft synth, or a guitar rig.
 #
-# This list replaces the audio branch's 02-video-optical.list. Do not purge
-# kdenlive, melt, MLT, subtitleeditor, devede or k3b here: they are the video
-# product.
+# The video front ends are handled by 02-video-optical.list. This batch does
+# not remove kdenlive, melt, MLT, subtitleeditor, devede or k3b; that list
+# keeps the MLT libraries because Krita and Synfig link them.
 ableton-link-utils
 ardour
 audacity

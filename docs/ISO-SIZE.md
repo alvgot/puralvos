@@ -1,10 +1,13 @@
 # ISO size: why the image grew, and what was done about it
 
-> **Video branch note (20 October 2026).** This file records the audio
-> branch's size accounting, including the 96 MB TONE3000 player. The video
-> branch does not ship TONE3000. Its production image is
-> `puralvos-video-20261020-0239.iso`, 6.57 GB, with a 661 MB top layer and a
-> 302 MB squashfs. See [VIDEO.md](VIDEO.md).
+> **Video and graphics branch note (20 October 2026).** This file records the
+> audio branch's size accounting, including the 96 MB TONE3000 player. Neither
+> the video nor the graphics branch ships TONE3000. The video production image
+> is `puralvos-video-20261020-0239.iso`, 6.57 GB. The graphics production image
+> is `puralvos-graphics-20261020-0642.iso`, 6.57 GB, sha256
+> `e700c3369f4ce07a0f4b3f1940021afd80db321e267d2eb9e9a82000188abc8c`, also
+> with a 661 MB top layer and a 302 MB squashfs. See [VIDEO.md](VIDEO.md) and
+> [GRAPHICS.md](GRAPHICS.md).
 
 The question that produced this document: *why is PuralvOS bigger than the
 Ubuntu Studio ISO it is built from?* The short answer is that most of the

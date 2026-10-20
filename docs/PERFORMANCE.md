@@ -1,10 +1,12 @@
 # Performance
 
-> **Video branch note (20 October 2026).** This document was written while
-> measuring the audio image. The boot marker, the real time kernel and the
-> measurement method are unchanged. The video-only image reached
-> `PURALVOS_DESKTOP_READY 22.69` under unthrottled KVM; a throttled USB-stick
-> measurement has not been taken for this branch. See [VIDEO.md](VIDEO.md).
+> **Video and graphics branch note (20 October 2026).** This document was
+> written while measuring the audio image. The boot marker, the real time
+> kernel and the measurement method are unchanged. The video-only image
+> reached `PURALVOS_DESKTOP_READY 22.69` under unthrottled KVM; the graphics
+> production image reached `PURALVOS_DESKTOP_READY 24.00` and its verification
+> build 23.98. A throttled USB-stick measurement has not been taken for either
+> branch. See [VIDEO.md](VIDEO.md) and [GRAPHICS.md](GRAPHICS.md).
 
 The request was that PuralvOS be very fast as an OS. "Fast" is not a
 specification, so this file turns it into numbers that can fail a build.

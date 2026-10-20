@@ -1,12 +1,9 @@
-# Video trim, batch 07 of 12 (disabled): online accounts and single sign-on.
+# Graphics trim, batch 07 of 12 (disabled): online accounts and single sign-on.
 #
-# Vetted list. tools/build-live.sh applies these files in numeric order with:
-#
-#     apt-get purge -y --auto-remove <the names below>
-#
-# The order is part of the verification: this working copy was purged with
-# these batches in this order, and the video anchors were checked after
-# every batch. Do not merge or reorder the files.
+# Disabled because Skanpage depends on qml6-module-org-kde-purpose, which
+# depends on libkaccounts6-2. Applying this batch would take the scanner
+# application with it. The list is retained as the measured record; it is not
+# applied by tools/build-live.sh.
 
 kaccounts-integration
 kaccounts-providers

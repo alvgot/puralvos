@@ -4,18 +4,11 @@
 # PikoPixel with it, so this batch is retained as a record but is not applied.
 # If PikoPixel is ever dropped from tasks.list, enable this list and re-check
 # the graphics anchors.
-
-# Video trim, batch 10 of 12: GNUstep.
 #
-# Vetted list. tools/build-live.sh applies these files in numeric order with:
-#
-#     apt-get purge -y --auto-remove <the names below>
-#
-# The order is part of the verification: this working copy was purged with
-# these batches in this order, and the video anchors were checked after
-# every batch. Do not merge or reorder the files.
-#
-# Zero removals: the stack was already gone as collateral of batch 3. Kept for the record.
+# tools/build-live.sh does not apply this file. It is retained as the measured
+# record of the collision: applying the batch would remove PikoPixel's GNUstep
+# runtime. If PikoPixel is ever dropped from the product, enable it and re-check
+# the graphics anchors.
 
 gnustep-back-common
 gnustep-back0.32

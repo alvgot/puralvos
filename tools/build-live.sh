@@ -667,6 +667,20 @@ if [ -x "$FULL/usr/bin/devede_ng" ] && [ -f "$DEV" ]; then
 	echo "  devede menu entry: Exec corrected to /usr/bin/devede_ng"
 fi
 
+# PikoPixel ships a GNUstep desktop entry that launches through openapp(1).
+# openapp needs dpkg-architecture, which the toolchain trim removes, so the
+# menu entry dies with "Can't find the required application" while the
+# PikoPixel binary itself is installed and works. Point the entry at the
+# binary the package ships.
+PIKO="$FULL/usr/share/applications/PikoPixel.desktop"
+if [ -x "$FULL/usr/bin/PikoPixel" ] && [ -f "$PIKO" ]; then
+	sed -i -e 's#^Exec=/usr/bin/openapp PikoPixel %F$#Exec=/usr/bin/PikoPixel %F#' \
+	       -e '/^# Hidden by PuralvOS: the executable this entry names is not installed\.$/d' \
+	       -e '/^# See tools\/build-live.sh:fix_desktop_entries$/d' \
+	       -e '/^NoDisplay=true$/d' "$PIKO"
+	echo "  pikopixel menu entry: Exec corrected to /usr/bin/PikoPixel"
+fi
+
 say "desktop entry hygiene"
 fix_desktop_entries
 

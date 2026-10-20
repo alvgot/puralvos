@@ -1,5 +1,11 @@
 # Baseline: stock Ubuntu Studio 26.10
 
+> **Branch note (20 October 2026).** This is still the stock base measurement
+> and applies unchanged to every branch. The graphics product built on it
+> reaches `PURALVOS_DESKTOP_READY 24.00` under unthrottled KVM, installs 2378
+> packages and removes 1072 through `tools/graphics-trim`. See
+> [GRAPHICS.md](GRAPHICS.md).
+
 What the unmodified base actually is, measured rather than assumed.
 
 Everything below was read out of the verified ISO, not from the marketing page.
@@ -102,12 +108,13 @@ ubuntustudio-fonts / -icon-theme / -look
 ```
 
 `ubuntustudio-desktop` is present and pulls the general-purpose desktop with it.
-On the video branch the four other task bundles (`-audio`, `-graphics`,
-`-photography`, `-publishing`) are present and are not wanted. The umbrella is kept out via
-`excludes.list` and the bundles are purged at build time (`purge_in_chroot` in
-`tools/build-live.sh`) — with them go their orphaned chains (QLC+ and the
-lighting stack, the Wacom X driver) while `xserver-xorg-core` is deliberately
-marked manual so the sweep cannot take the X server with them.
+On the graphics branch the four other task bundles (`-audio`, `-video`,
+`-photography`, `-publishing`) are present and are not wanted. The umbrella is
+kept out via `excludes.list` and the bundles are purged at build time
+(`purge_in_chroot` in `tools/build-live.sh`) — with them go their orphaned
+chains (QLC+ and the lighting stack), while `xserver-xorg-core` and
+`xserver-xorg-input-wacom` are deliberately marked manual so the sweep cannot
+take the graphics session or tablet support with them.
 
 ## The step that is not a package
 

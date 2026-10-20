@@ -1,7 +1,13 @@
-# Machine-learning and computer-vision runtime, minus everything Blender
-# needs. The audio branch's 12-ml.list also removes Embree, Imath, OpenColorIO,
+# Graphics trim, batch 12 (disabled): machine-learning and computer-vision
+# runtime. Disabled because Krita and MLT depend on the OpenCV stack:
+#
+#     krita -> libmlt7 -> libopencv-contrib410, libopencv-core410,
+#                         libopencv-imgproc410, libopencv-video410
+#
+# The audio branch's 12-ml.list also removes Embree, Imath, OpenColorIO,
 # OpenEXR, OpenImageIO, OpenVDB and OpenXR; those are direct Blender
-# dependencies and must stay on a video workstation.
+# dependencies and must stay. The list is retained as the measured record; it
+# is not applied by tools/build-live.sh.
 #
 # Keep out of this list: libembree4-4, libimath-3-1-29t64,
 # libopencolorio2.5, libopenexr-3-4-33, libopenimageio2.5,
