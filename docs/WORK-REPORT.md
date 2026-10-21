@@ -394,3 +394,56 @@ the next thing to test.
   configuration claim on a machine with no sound card.
 - The docs now describe the measured state; the licence and the non-free
   manifest tool are still the first two items in the README's "not yet done".
+
+## Session 2026-10-21: the family rebuilt and verified, four branches
+
+`variants/audio-graphics-video` was removed. The repo is exactly four branches,
+one product each:
+
+| branch | product | contains |
+| --- | --- | --- |
+| **main** | `puralvos-full-*` | audio + video + graphics |
+| `audio-only` | `puralvos-audio-*` | audio |
+| `video-only` | `puralvos-video-*` | video |
+| `graphics-only` | `puralvos-graphics-*` | graphics |
+
+Everything was rebuilt from the 26.10 base on 2026-10-21, production and
+self-test images both. The base is Ubuntu Studio 26.10 "Stonking Stingray" on
+every branch (the branch READMEs now say so), and no branch carries a 24.04.1
+base claim any more.
+
+| image | sha256 | size | boot to desktop | self test |
+| --- | --- | --- | --- | --- |
+| `puralvos-full-20261021-0254.iso` | `9ea4aa573b69b684196dfd502dfd9ad692da8ac7f53d4bc2871d62b88a7e7205` | 6.60 GB | 23.97 s | `ok=148 bad=3` (from the earlier 0209 build, whose tree is byte-identical) |
+| `puralvos-audio-20261021-0245.iso` | `6f3188d40819357a2fbc7ec06daa0b0384ab7b52ad32647f91947486317b1500` | 6.60 GB | 22.09 s | `ok=123 bad=3` (`puralvos-audio-20261021-0247.iso`) |
+| `puralvos-video-20261021-0309.iso` | `ad757a62df74fda2bfecceb8d673e389334a139c763184fe873fce162a1ace99` | 6.57 GB | 23.43 s | `ok=90 bad=3` (`puralvos-video-20261021-0317.iso`) |
+| `puralvos-graphics-20261021-0626.iso` | `e0297e08ba4915cdeaababc2575a98003c4409fa446a7114eff16dda323afa01` | 6.57 GB | 23.90 s | `ok=87 bad=3` (`puralvos-graphics-20261021-0631.iso`) |
+
+The self-test verification ISOs are built with `PURALVOS_SELFTEST=1` on the
+same tree, so a product's self test reports what a customer's boot really
+does. `bad=3` everywhere is the documented environment set, on every branch:
+
+- `menu:Keyboard layout viewer` — double free in KDE kcm under KVM;
+- `menu:cpupower-gui` — exits to `gapplication help`;
+- `menu:Additional Drivers` — polkit wants a controlling tty the test VM has
+  none of.
+
+`tier2:udev-audio-rules` is SLOW on all four (no audio udev rule in the image;
+see the audio branch's rules note).
+
+Fixes verified this session, per branch:
+
+- **self-test unit switch** — not on audio (the build unconditional-disabled
+  it and a self-test build ran nothing); now opt-in made effective;
+- **`as_desktop` pins the applications to X11** on audio, video and the
+  already-fixed main — on the 26.10 base, apps launched from the test had
+  Wayland environment and their surfaces never appeared in `xwininfo`;
+- **`LAUNCH_TIMEOUT` = 120 s** everywhere;
+- **the look-and-feel default step is idempotent** on main, audio, video and
+  graphics, so a verification re-authoring of an already-branded tree doesn't
+  crash reading a deleted metadata file;
+- **`jack_control`, `mplayer`, `meterbridge` are console tests** rather than
+  window launches, and jack_control's `status`-stopped answer is accepted;
+- **`musescore4` removed** from the audio branch's list: 26.10 packages
+  musescore3, and the entry bought a SKIP line on every run;
+- **product naming on audio**: `puralvos-audio-<stamp>.iso`, `PURALVOS_AUDIO`.
