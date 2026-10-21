@@ -646,12 +646,21 @@ install -Dm0644 "$REPO/tools/puralvos-selftest.service" \
 	"$FULL/etc/systemd/system/puralvos-selftest.service"
 rm -f "$FULL/lib/systemd/system/puralvos-selftest.service"
 
-# For the live session, disable the self-test unit to avoid boot delays
-# The self-test runs a comprehensive verification but slows down startup
-chroot "$FULL" systemctl disable puralvos-selftest.service >/dev/null 2>&1 || true
-# Remove from multi-user.target.wants to prevent it from running at boot
-rm -f "$FULL/etc/systemd/system/multi-user.target.wants/puralvos-selftest.service"
-echo "  self test unit: disabled for live session (faster boot)"
+# The self test runs a comprehensive verification and opens every application,
+# so it is opt-in. A production live session must not pay that cost; a
+# verification build (PURALVOS_SELFTEST=1) must actually run the thing the
+# kernel command line asks for, so the two decisions are made together here.
+if [ "${PURALVOS_SELFTEST:-0}" = 1 ]; then
+	chroot "$FULL" systemctl enable puralvos-selftest.service >/dev/null 2>&1 \
+		|| die "could not enable puralvos-selftest.service in the chroot"
+	[ -L "$FULL/etc/systemd/system/multi-user.target.wants/puralvos-selftest.service" ] \
+		|| die "puralvos-selftest.service did not get enabled"
+	echo "  self test unit: enabled (verification build)"
+else
+	chroot "$FULL" systemctl disable puralvos-selftest.service >/dev/null 2>&1 || true
+	rm -f "$FULL/etc/systemd/system/multi-user.target.wants/puralvos-selftest.service"
+	echo "  self test unit: disabled for live session (faster boot)"
+fi
 
 # The desktop-entry parser the self test uses, so there is one implementation
 # of it in the shipped image rather than one in the image and another in the
@@ -3392,7 +3401,7 @@ done
 
 say "writing the ISO"
 STAMP=$(date +%Y%m%d-%H%M)
-ISOUT="$OUT/puralvos-live-$STAMP.iso"
+ISOUT="$OUT/puralvos-audio-$STAMP.iso"
 
 # grub-mkrescue, NOT a hand written xorriso command line.
 #
@@ -3489,7 +3498,7 @@ done
 GRUB_HOST_VER=$(grub_module_version /usr/lib/grub/x86_64-efi)
 echo "  grub: ISO tree modules pinned to the build machine's GRUB ${GRUB_HOST_VER:-unknown}"
 
-grub-mkrescue -o "$ISOUT" -volid "PURALVOS_LIVE" "$WORK/iso/" 2>&1 \
+grub-mkrescue -o "$ISOUT" -volid "PURALVOS_AUDIO" "$WORK/iso/" 2>&1 \
 	| grep -viE '^xorriso|^libisofs|^Drive |^Media |^Added to|^ISO image produced|^Writing to' \
 	| tail -4 | sed 's/^/  /'
 
@@ -3548,8 +3557,8 @@ cat <<EOF
 
   Test it with:
 
-    ./scripts/kvmtest.sh "$ISOUT" puralvos-live 900 60
-    python3 scripts/qmp-key.py /tmp/opencode/kvmrun/puralvos-live ret
+    ./scripts/kvmtest.sh "$ISOUT" puralvos-audio 900 60
+    python3 scripts/qmp-key.py /tmp/opencode/kvmrun/puralvos-audio ret
 
   There is no serial console on an Ubuntu ISO. Judge it from the screenshots.
 

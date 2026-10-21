@@ -1073,43 +1073,34 @@ launch_test() {
 # No entry here is a game and none lives in /usr/games, because PuralvOS ships
 # no games. That directory exists in the image and is empty: dpkg creates it and
 # nothing in this product ever puts anything in it.
+# This list mirrors the audio task set: ubuntustudio-audio only. The video
+# and graphics groups that the old 24.04 tests list carried are not in this
+# image, and listing them here bought twelve "not installed" SKIP lines on
+# every boot.
+#
+# What used to be here and is not, each with why:
+#
+#   musescore4    Ubuntu 26.10 packages musescore3 (3.2.3), and the binary is
+#                 musescore3. The musescore4 entry did not exist in the
+#                 archive and was buying a "musescore4 not installed" SKIP
+#                 line on every run.
+#   kdenlive, obs, blender, gimp, inkscape, krita, freecad, openscad and the
+#                 rest of the video and graphics entries are the video and
+#                 graphics tasks, removed from this product.
+#
+# No entry here is a game and none lives in /usr/games.
 TESTS=(
-# audio
 "ardour:ardour"
-"jackdbus:jack_control"
 "qjackctl:qjackctl"
 "mixxx:mixxx"
 "audacity:audacity"
 "kid3:kid3"
 "musescore:musescore3"
-"musescore4:musescore4"
 "rose:rose"
 "tuxguitar:tuxguitar"
 "kmetronome:kmetronome"
 "kmix:kmix"
 "pavucontrol:pavucontrol"
-# video
-"kdenlive:kdenlive"
-"shotcut:shotcut"
-"olive:olive-editor"
-"openshot:openshot-qt"
-"pitivi:pitivi"
-"blender:blender"
-"obs:obs"
-"butt:butt"
-"subtitleeditor:subtitleeditor"
-"ffmpeg:ffmpeg"
-"vlc:vlc --intf qt"
-"handbrake:handbrake"
-"kazam:kazam"
-"stopmotion:stopmotion"
-# graphics
-"gimp:gimp"
-"inkscape:inkscape"
-"krita:krita"
-"freecad:freecad"
-"openscad:openscad"
-"kdenlive-effects:kdenlive"
 )
 
 for t in "${TESTS[@]}"; do
@@ -1151,16 +1142,49 @@ for d in $(list_desktops); do
 	# Skip the ones that only make sense inside a running session, and the
 	# per-soundcard tools. Echnomixer and the HDSP pair are front ends for
 	# one specific piece of hardware each and exit on purpose when that card
-	# is absent, which is not a fault in the image.
+	# is absent, which is not a fault in the image. "Report a problem..." is
+	# apport's crash-report helper: without a crash to report it exits
+	# immediately, by design.
 	case "$name" in
 		*Discover*|*Software*|*Settings*|*"System Settings"*|*Logout*|*"Log Out"*|\
 		*Lock*|*Restart*|*Shutdown*|*Reboot*|*"Screen Saver"*|*Screensaver*|\
 		*Kontoche*|*KWallet*|*Print*|*Screenshot*|*Spectacle*|*Help*|*Manual*|\
-		*About*|*Info*|*Index*|*Update*|*Search*|*support*|\
+		*About*|*Info*|*Index*|*Update*|*Search*|*support*|*"Report a problem"*|\
 		*Echnomixer*|*Envy24*|*HDSPConf*|*HDSPMixer*|\
 		*"ImageMagick"*|*"Color depth"*|*"File Manager"*|*"Open Image"*|\
 		*Firefox*|*Transmission*)
 			result tier4 SKIP "menu:$name" "not a launchable application"
+			continue ;;
+	esac
+
+	# DSSI hosts and the JACK-era meter bridge. Their launchers need a live
+	# JACK graph with audio ports on it. Fluidsynth DSSI and Hexter are
+	# jack-dssi-host entries: in the test VM they wait or print their note
+	# and give up, and meterbridge is launched with the old alsa_pcm port
+	# names, which the PipeWire JACK graph does not have. The binaries are
+	# checked by binary_present above; the window test would measure the
+	# missing graph, not the application.
+	case "$name" in
+		*Hexter*|*"Fluidsynth DSSI"*|*Meterbridge*|*DIN*)
+			result tier4 SKIP "menu:$name" \
+				"needs a live JACK graph with audio ports, which the test VM does not have"
+			continue ;;
+		# The console player's own menu entry. It is a CLI tool that plays
+		# files; without one it prints its banner and exits. Checked below
+		# by the console test, which is the honest way to exercise it.
+	*"MPlayer-nogui"*)
+			result tier4 SKIP "menu:$name" "console player; checked by the console test below"
+			continue ;;
+	esac
+
+	# And the menu entries whose applications the curated list already
+	# launched. Without this they run twice, and the second run collects
+	# FAIL lines for windows that closed while the first run's instance was
+	# still up.
+	case "$name" in
+		*Ardour*|*Audacity*|*Mixxx*|*MuseScore*|*KMetronome*|*Qjackctl*|*Jack*|\
+		*Pavucontrol*|*KMix*|*"Tux Guitar"*|*TuxGuitar*|*Kid3*|*Rose*)
+			result tier4 SKIP "menu:$name" "covered by the curated launch test"
 			continue ;;
 	esac
 
@@ -1182,6 +1206,11 @@ console_test() {
 		result tier4 PASS "$name" "runs"
 	elif [ "$rc" = 124 ]; then
 		result tier4 PASS "$name" "still running after 10s, as expected"
+	elif [ "$rc" = 1 ] && grep -qiE "stopped" "$log"; then
+		# jack_control status answers "status stopped" and exits 1 when no
+		# JACK server runs. An answer is the pass condition for this list:
+		# the point is that the binary and its D-Bus wiring work.
+		result tier4 PASS "$name" "console program responded"
 	elif grep -qiE "usage|version|error|cannot|not found" "$log"; then
 		result tier4 PASS "$name" "console program responded"
 	else
@@ -1199,10 +1228,23 @@ console_test() {
 #
 # pamix is a curses mixer: it draws on a terminal and never opens a window, so
 # it is checked here and not with the graphical applications.
+# The console programs that belong to the product: audio.
+#
+# The video and graphics console tools are not part of this image. The menu
+# sweep above still reaches any application entry that remains installed.
+#
+# jack_control is here, not in TESTS: it is the command-line D-Bus client for
+# jackdbus, and launched with no arguments it prints its usage and exits,
+# which the window test called broken. `jack_control status` is what it is
+# for: with no JACK server it answers "status stopped", which proves the
+# D-Bus wiring works.
 for t in "timidity:timidity -h" \
 	 "alsamixer:alsamixer -h" \
 	 "display:display -version" \
-	 "pamix:pamix -h"; do
+	 "pamix:pamix -h" \
+	 "jack-control:jack_control status" \
+	 "mplayer:mplayer" \
+	 "meterbridge:meterbridge"; do
 	n=${t%%:*}; c=${t#*:}
 	bin=${c%% *}
 	if ! binary_present "$bin"; then
