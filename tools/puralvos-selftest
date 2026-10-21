@@ -199,6 +199,7 @@ as_desktop() {
 		XDG_SESSION_TYPE=x11 XDG_SESSION_CLASS=user \
 		XDG_SESSION_DESKTOP=KDE XDG_CURRENT_DESKTOP=KDE \
 		DESKTOP_SESSION=plasma \
+		WAYLAND_DISPLAY= GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb \
 		XDG_CONFIG_DIRS="/etc/xdg:$PurHome/.config" \
 		XDG_DATA_DIRS="/usr/local/share:/usr/share:$PurHome/.local/share" \
 		XDG_CACHE_HOME="$PurHome/.cache" \
@@ -985,7 +986,11 @@ window_sig() {
 	printf '%s' "$raw" | grep -oE '^\s+0x[0-9a-f]+' | tr -d ' ' | sort
 }
 
-LAUNCH_TIMEOUT=${LAUNCH_TIMEOUT:-60}
+# 120 s, not 60. The 26.10 rebase made the applications larger and the first
+# runs on real hardware showed several of them — Blender, OBS, MuseScore —
+# taking 20 s or more to draw a window. 60 s reported healthy applications as
+# broken.
+LAUNCH_TIMEOUT=${LAUNCH_TIMEOUT:-120}
 
 # Close whatever an application left behind, whether or not it worked.
 reap() {

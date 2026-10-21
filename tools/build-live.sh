@@ -1152,8 +1152,14 @@ fi
 # finds, which is org.puralvos.desktop (the dark one) — that is why a fresh
 # live user came up dark and wrote a dark ~/.config/kdedefaults whatever
 # kdeglobals said. The light theme is the default; the dark one is a choice.
-python3 - "$LF/org.puralvos.desktop/metadata.json" \
-           "$LF/org.puralvos-light.desktop/metadata.json" <<'PYLNF'
+# Idempotent: an already-branded tree has the dark package gone and the light
+# one already EnabledByDefault, so there the step is a no-op with a note.
+if [ -f "$LF/org.puralvos.desktop/metadata.json" ]; then
+	[ -f "$LF/org.puralvos-light.desktop/metadata.json" ] \
+		|| die "org.puralvos.desktop exists but the light look-and-feel does not;
+     the branding cannot make light the only default"
+	python3 - "$LF/org.puralvos.desktop/metadata.json" \
+	           "$LF/org.puralvos-light.desktop/metadata.json" <<'PYLNF'
 import json, sys
 dark, light = sys.argv[1:3]
 for path, enabled in ((dark, False), (light, True)):
@@ -1164,7 +1170,13 @@ for path, enabled in ((dark, False), (light, True)):
         json.dump(meta, fh, indent=4)
         fh.write("\n")
 PYLNF
-echo "  look-and-feel: light is the only EnabledByDefault theme"
+	echo "  look-and-feel: light is the only EnabledByDefault theme"
+elif [ -f "$LF/org.puralvos-light.desktop/metadata.json" ]; then
+	echo "  look-and-feel: dark package already absent, light stays the default"
+else
+	die "neither the dark nor the light look-and-feel is in $LF;
+     the branding has nothing to make the default"
+fi
 
 # The dark look-and-feel package is not shipped. With it present the session
 # applied it and wrote ~/.config/kdedefaults with name=puralvos-dark,
