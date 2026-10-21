@@ -147,7 +147,8 @@ that reports a pass it did not earn is how a broken image ships.
 
 ## Live image layout, for anyone rebuilding it
 
-Ubuntu 24.04 changed this and it is the first thing to trip people up:
+This base layers its live filesystem, and that is the first thing to trip
+people up:
 
 ```
 /casper/minimal.squashfs
@@ -158,5 +159,4 @@ Ubuntu 24.04 changed this and it is the first thing to trip people up:
 
 There is no `casper/filesystem.squashfs` any more. A live image is the base
 layer plus the standard layer plus the live layer, and overlays go on top of
-that. Anything that assumes a single squashfs — which is most tooling written
-before 24.04 — will not work here.
+that. Anything that assumes a single squashfs will not work here.
