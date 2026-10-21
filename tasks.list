@@ -2,28 +2,18 @@
 #
 # What PuralvOS installs, and nothing else.
 #
-# This list is not invented. It is the Ubuntu Studio Installer's own task table,
-# taken from backend.py in ubuntustudio-installer 2.0.7 (stonking):
+# This list is derived from the Ubuntu Studio Installer's own task table
+# (`ubuntustudio-installer 2.0.7`, in the stonking archive). It keeps its
+# media-production metapackages and drops the general purpose ones.
+
+# PuralvOS (this file, on `main`) is the full workstation: all three media
+# disciplines in the same image. The audio-only, video-only and graphics-only
+# images are built from their own branches with their own task and trim lists
+# and their own docs. Nothing here should silently bleed into one of those
+# branches; if a package moves between products, that is deliberate.
 #
-#     METAPACKAGES = (
-#         "ubuntustudio-lowlatency-settings",
-#         "ubuntustudio-performance-tweaks",
-#         "ubuntustudio-audio",
-#         "ubuntustudio-graphics",
-#         "ubuntustudio-photography",
-#         "ubuntustudio-publishing",
-#         "ubuntustudio-video",
-#         "ubuntustudio-wallpapers",
-#         "ubuntustudio-menu",
-#         "ubuntu-edu-music",
-#     )
-#
-# PuralvOS is that list minus photography and publishing. Everything else is
-# carried over unchanged, because the upstream tasks are curated by people who
-# know which combination of applications actually cooperates with PipeWire,
-# which plugins build, and which plugin hosts need which libraries.
-#
-# Resolved against Ubuntu 26.10 (stonking), ubuntustudio-* 26.10.20.
+# On the 26.10 archive the task packages resolve to `ubuntustudio-*-26.10.8`.
+# Re-read that from `dpkg` if/when upstream changes.
 
 # --- the three tasks that define the product -------------------------------
 
@@ -50,8 +40,8 @@ ubuntustudio-pipewire-config
 # twice over: PPAs need apt pinning to work at all, and they are the usual way
 # a system ends up holding a kernel nobody will ever patch.
 #
-# linux-realtime, NOT linux-lowlatency. On Ubuntu 26.04 these are not what the
-# names suggest, and picking the wrong one fails silently:
+# linux-realtime, NOT linux-lowlatency. The names are not what they look like,
+# and picking the wrong one fails silently:
 #
 #     linux-lowlatency   Depends: linux-image-generic (= 7.0.0-14.14)
 #                        "Complete Generic Linux kernel and headers with
@@ -65,7 +55,7 @@ ubuntustudio-pipewire-config
 # cooperatively, so it will still glitch under audio load. linux-realtime is
 # the PREEMPT_RT build, which is what real time priority actually needs.
 #
-# Verified against the resolute archive, not assumed. tools/kernel-select.py
+# Verified against the 26.10 (stonking) archive, not assumed. tools/kernel-select.py
 # re-derives this at build time so an upstream rename cannot quietly put a
 # generic kernel on a machine that thinks it has a real time one:
 #

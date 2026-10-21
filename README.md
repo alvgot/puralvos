@@ -16,7 +16,7 @@ Three things define it:
 
 1. **Only what does the work.** Audio, video, graphics. No LibreOffice, no
    snapd, no printer drivers, no synaptic.
-2. **The real time kernel, from the distro.** `linux-lowlatency` out of the
+2. **The real time kernel, from the distro.** `linux-realtime` out of the
    Ubuntu archive. Not a PPA, so it keeps getting security updates.
 3. **Our packages upgrade; yours don't.** The curated set we ship stays
    current. Anything you install afterwards is yours, and we leave it alone.
@@ -27,7 +27,7 @@ Three things define it:
 | --- | --- |
 | Base | Ubuntu Studio 26.10 "Stonking Stingray" |
 | Codename | `stonking` |
-| Support | until April 2029 |
+| Support | until July 2027 (interim release) |
 | Kernel | `linux-realtime` (PREEMPT_RT) 7.3, from the archive |
 | Desktop | Plasma (KDE), inherited from the base |
 | Architecture | amd64 |
@@ -50,26 +50,35 @@ exists so that stays a tracked decision rather than a surprise.
 
 ## Images
 
-Both are built from the same curated filesystem, so the thing you try live is
-the thing you get installed.
+`main` builds the full product: **all three media disciplines** — audio, video
+and graphics — in the same live image. The audio-only, video-only and
+graphics-only variants live on their own branches and are not built from this
+image. Each has its own docs and naming. Main is the branch this repo keeps
+the whole product on.
 
-| build | boots to | installs to disk | how |
-| --- | --- | --- | --- |
-| **PuralvOS Live** (default) | full workstation, live | no | `tools/build-live.sh` |
-| **PuralvOS** (installable) | full workstation, live | yes, via the stock Ubuntu installer | `PURALVOS_INSTALLER=1 tools/build-live.sh` |
+| branch | product | contains |
+| --- | --- | --- |
+| **main** | `puralvos-full-*` | audio + video + graphics |
+| `audio-only` | `puralvos-audio-*` | audio only |
+| `video-only` | `puralvos-video-*` | video only |
+| `graphics-only` | `puralvos-graphics-*` | graphics only |
 
-The default is the Live image because that is the one that is measured and
-used: it masks snapd, one of the two largest boot costs on the stock ISO (the
-other is `ldconfig`), and it is already excluded by
-[`excludes.list`](excludes.list). The cost is the
-snap-based installer; `PURALVOS_INSTALLER=1` builds the other variant with
-snapd kept.
+ISO timestamps use the ISO name "puralvos-{discipline}-YYYYMMDD-HHMM.iso,"
+where "FULL" means the full union of all three disciplines and not "bigger
+than stock".
 
-Boot to a usable Plasma desktop is **about 50 seconds** on a 2016 ThinkPad
-T460s from a USB stick, and **43–44 seconds** (kernel start to desktop) under
-KVM with the ISO throttled to 25 MB/s. How that is measured, and what it
-costs, is in [docs/PERFORMANCE.md](docs/PERFORMANCE.md); the session that
-found it is in [docs/WORK-REPORT.md](docs/WORK-REPORT.md).
+There are two build variants within main: a live-only image and an
+installable one. Both give the full set the same curated package tree and
+both have exactly the same boot time; only the second copies the packages to
+an installed system. Main defaults to the *live* build. The installer lives
+on a separate branch because it is a different product and its boot path is
+not measured yet.
+
+The default build on main is the Live image because it is measured and used:
+snapd is one of the two largest boot costs on the stock ISO and it is already
+excluded by [`excludes.list`](excludes.list). The other cost is `ldconfig`.
+`PURALVOS_INSTALLER=1` builds the installable variant with snapd kept for
+installer use. Its boot-time has not been re-measured.
 
 ## Layout
 
@@ -84,7 +93,7 @@ brand/assets/              generated mark, wordmark, glyphs, wallpapers
 tools/make-brand.py        generate every brand asset from tokens.json
 tools/make-package-declaration.py   derive the package list from tasks.list
 tools/report-packages.py   inventory and removal proposal, from the built rootfs
-tools/build-live.sh        build the live image (or the installable one)
+tools/build-live.sh        build the full image (or the installable one)
 scripts/kvmboottime.sh     measure boot-to-desktop, with the ISO throttled
 tools/puralvos-selftest    verify a booted image from the inside
 tools/puralvos-selftest.service  the unit that runs it at boot, opt-in
@@ -104,6 +113,12 @@ docs/PERFORMANCE.md        what "fast" means here, as numbers that can fail
 docs/WORK-REPORT.md        where the build stands and what is still open
 ```
 
+The build command now emits `puralvos-full-YYYYMMDD-HHMM.iso`.
+`make live` is the target. ISO names stay consistent with the branch family:
+`puralvos-audio-YYYYMMDD-HHMM.iso`, `puralvos-video-YYYYMMDD-HHMM.iso`,
+`puralvos-graphics-YYYYMMDD-HHMM.iso`.
+
+---
 ## Getting started
 
 ```sh
@@ -118,7 +133,7 @@ make test-parser       # prove the desktop-entry parser reads real entries
 Building an image needs about 45 GB free and takes roughly half an hour:
 
 ```sh
-PURALVOS_RESUME=0 make live     # from scratch
+PURALVOS_RESUME=0 make live     # from scratch, puralvos-full-*.iso
 make live                       # reuse the unpacked layers
 make boot-test                  # boot it under KVM and read the serial log
 ```
@@ -166,9 +181,11 @@ Studio* rather than for the substring *ubuntu*, so those two stay.
 
 ## Status
 
-The image builds, boots, and reaches a usable desktop in about 50 seconds on
-the laptop it was made for. The live session autologins as `puralvos` and an
-ordinary `puralv` account exists for a console or ssh login.
+The Ubuntu Studio 26.10 full image builds with the real time kernel, the three
+task bundles and the full graphics set. The live session autologins as
+`puralvos` and an ordinary `puralv` account exists for a console or ssh login.
+The 26.10 full ISO still has to finish KVM boot and in-guest verification
+before its numbers replace the historical 26.04 measurements.
 
 Verification is opt-in so it does not cost boot time or launch applications:
 `PURALVOS_SELFTEST=1` puts `console=ttyS0,115200n8` and `puralvos.selftest=1`

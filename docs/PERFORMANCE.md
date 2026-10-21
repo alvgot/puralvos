@@ -79,6 +79,19 @@ Measured on the installed system, not the live session. Numbers, not adjectives.
 An audio workstation that drops out under load is not a workstation, and boot
 time is not what anyone is thinking about when they are mixing.
 
+## Live boot after the 26.10 rebase (2026-10-21)
+
+One measured boot of `out/puralvos-full-20261021-0057.iso`:
+
+- ISO under KVM, no throttling (`QEMU v8.2.2`, OVMF, `vcpus=4`, 6 GiB RAM).
+- reached `PURALVOS_DESKTOP_READY` at **23.33 s** from kernel start.
+- the full desktop was visible and usable at 23.50 s.
+- boot log: `/tmp/opencode/kvmrun/puralvos-full-prod7/serial.log`.
+- screenshot: `/tmp/opencode/kvmrun/puralvos-full-prod7/manual1.png`.
+
+The older measurements below are retained for context.
+
+---
 ## Live boot, measured
 
 The 8-second target above is the installed system on NVMe with a warm page

@@ -1,9 +1,72 @@
-# ISO size: why the image grew, and what was done about it
+# PuralvOS Full 26.10 — size and package count
 
-The question that produced this document: *why is PuralvOS bigger than the
-Ubuntu Studio ISO it is built from?* The short answer is that most of the
-first growth was build residue rather than the product, and removing it made
-the 0843 build smaller than stock.
+This is the record of one build: `out/puralvos-full-20261021-0057.iso`
+(Ubuntu Studio 26.10 "Stonking Stingray").
+The smaller, older 24.04 / 26.04 picture lives under "history" below.
+
+## This build
+
+| image | bytes | GiB |
+| --- | ---: | ---: |
+| Ubuntu Studio 26.10 stock | 6 905 530 368 | 6.43 |
+| PuralvOS Full 26.10 (`...0057`) | 7 088 314 368 | 6.60 |
+
+The full image is **+182 784 000 bytes (174 MiB, +4.05 %)** over stock.
+
+Live squashfs layer size in this build:
+
+- stock: **148 MiB**
+- PuralvOS: **338 MiB**
+- delta in that layer: **+190 MiB**
+
+The other two casper layers are stock.
+
+## Package-level accounting
+
+- stock 26.10 base has **3339** installed packages (from
+  `/var/lib/dpkg/status` in the base build root).
+- the final full image has **2920** installed packages (measured from the
+  same file in the finished layer).
+- net: base **3339 → 2920** after the trims; out of those, the build log
+  records **532 packages removed** across the active trim batches.
+
+Graphically, that is a reduction from stock of **419 packages**, plus a
+couple of PuralvOS additions.
+
+## Where the layer weight came from
+
+Top layer:
+- 760 MiB
+- 13 152 whiteouts.
+- final live squashfs is 338 MiB (from stock 148 MiB).
+
+This is the PSE 26.10 build, so the trim is at the bottom layers and
+does not use Docker's overlay2 "whiteout" hoisting as in 24.04.
+
+## Size accounting by branch
+
+Because the three single-product branches build from the same stock base, the
+size differences between `graphics-only`, `video-only` and `audio-only`
+branch variants would be roughly proportional to their package counts. For
+`PuralvOS Full`, the union of all three product branches must carry the
+apps the user needs.
+
+## Why the layer is that size
+
+- the graphics tree adds GIMP, Inkscape, Krita, Blender, MyPaint, Synfig,
+  Pencil2D, PikoPixel, Skanpage, KColorChooser and their libraries;
+- the audio stack carries the DAW set, plus the realtime kernel and
+  its modules;
+- the video stack carries Kdenlive, Blender, OBS, MLT, plus the codecs.
+
+All of that is deliberate and none is a trimming opportunity.
+
+## History
+
+Earlier stock ISO 24.04/26.04 measurements are below; kept because the same
+build mechanism is still used.
+
+---
 
 **The current build is bigger again, and this file says why rather than
 pretending otherwise.** The 2026-10-18 20:45 Live image is 7 348 336 640 bytes,

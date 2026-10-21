@@ -14,7 +14,7 @@ TOOLS   := tools
 	packages-report snap-census selftest rt-fix test-booth test-parser live \
 	boot-test check
 ROOTFS ?= /var/tmp/puralvos-build/layer
-ISO    ?= $(wildcard out/puralvos-live-*.iso)
+ISO    ?= $(wildcard out/puralvos-full-*.iso)
 
 # Snap is a decision, not a lean. excludes.list carries it, but the census is
 # here because the saving is in gigabytes and a package list hides that.
@@ -61,7 +61,7 @@ packages-all: ## write the complete installed package list
 	@echo "  packages listed with versions, sorted, one per line"
 
 packages-docs: ## copy the complete package list into the documentation
-	@extra=""; i=$$(ls -1t out/puralvos-live-*.iso 2>/dev/null | head -1); \
+	@extra=""; i=$$(ls -1t out/puralvos-full-*.iso 2>/dev/null | head -1); \
 	[ -n "$$i" ] && extra="--iso $$i"; \
 	python3 $(TOOLS)/make-packages-doc.py $$extra \
 		$(BASE_DIR)/puralvos/packages-installed.txt > docs/PACKAGES-INSTALLED.md
@@ -91,7 +91,7 @@ check: test-parser ## run every check that does not need a booted image
 test-parser: ## prove the desktop-entry parser reads the real Exec lines
 	bash $(TOOLS)/test-desktop-exec
 
-live: ## build the live image (needs ~45 GB; PURALVOS_RESUME=0 to rebuild from scratch)
+live: ## build the full image (needs ~45 GB; PURALVOS_RESUME=0 to rebuild from scratch)
 	$(TOOLS)/build-live.sh --keep
 
 # Boot the most recent ISO headlessly and print what it said about itself.
@@ -99,7 +99,7 @@ live: ## build the live image (needs ~45 GB; PURALVOS_RESUME=0 to rebuild from s
 # The image writes uname, os-release and every check's result to the serial port,
 # so the result is in the log and does not need a screenshot to be read.
 boot-test: ## boot the newest ISO under KVM and show what it reported about itself
-	@ls -1t out/puralvos-live-*.iso 2>/dev/null | head -1 | \
+	@ls -1t $(wildcard out/puralvos-full-*.iso) 2>/dev/null | head -1 | \
 		{ read i; echo "booting $$i"; \
 		  $(SCRIPTS)/kvmtest.sh "$$i" puralvos-boot 900 30; \
 		  echo; \

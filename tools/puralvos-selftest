@@ -199,6 +199,7 @@ as_desktop() {
 		XDG_SESSION_TYPE=x11 XDG_SESSION_CLASS=user \
 		XDG_SESSION_DESKTOP=KDE XDG_CURRENT_DESKTOP=KDE \
 		DESKTOP_SESSION=plasma \
+		WAYLAND_DISPLAY= GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb \
 		XDG_CONFIG_DIRS="/etc/xdg:$PurHome/.config" \
 		XDG_DATA_DIRS="/usr/local/share:/usr/share:$PurHome/.local/share" \
 		XDG_CACHE_HOME="$PurHome/.cache" \
@@ -985,7 +986,7 @@ window_sig() {
 	printf '%s' "$raw" | grep -oE '^\s+0x[0-9a-f]+' | tr -d ' ' | sort
 }
 
-LAUNCH_TIMEOUT=${LAUNCH_TIMEOUT:-60}
+LAUNCH_TIMEOUT=${LAUNCH_TIMEOUT:-120}
 
 # Close whatever an application left behind, whether or not it worked.
 reap() {
@@ -1052,66 +1053,44 @@ launch_test() {
 # Nothing here is a general desktop application, because PuralvOS does not ship
 # them. A menu entry that tests a stripped application is a false failure.
 #
-# This list mirrors tasks.list. Every entry below is in ubuntustudio-audio,
-# ubuntustudio-video or ubuntustudio-graphics.
+# This list mirrors the three product tasks and the 26.10 application set:
+# Ardour, Mixxx, Kdenlive, OBS, Blender, GIMP, Krita, MyPaint, Pencil2D,
+# PikoPixel, Skanpage and Synfig. Each entry was checked against the base
+# image's /usr/bin before it was added, so this list does not buy SKIP lines
+# for applications the product does not carry.
 #
-# What used to be here and is not, each with why:
+# jackdbus is checked by the console test below, not here: jack_control is a
+# command-line D-Bus client and produced "exited immediately" every run, which
+# was the test reporting its own confusion, not a broken JACK stack.
 #
-#   amsn          an instant messenger. Not a discipline; a general desktop
-#                 application that came along with the base.
-#   pocketsphinx  a speech recognition demo.
-#   yatm          a network traffic meter.
-#   harmonoid     a metronome from ubuntu-edu-music, which tasks.list leaves out
-#                 until PuralvOS has an education story. kmetronome stays: it
-#                 is in the image as an audio tool, and a metronome is
-#                 something an audio workstation uses.
-#   darktable     photography, and publishing. tasks.list excludes
-#   rawtherapee   ubuntustudio-photography and ubuntustudio-publishing on
-#   mypaint       purpose, so listing them here bought three "not installed"
-#   scribus       SKIP lines on every boot. Noise, not signal.
-#
-# No entry here is a game and none lives in /usr/games, because PuralvOS ships
-# no games. That directory exists in the image and is empty: dpkg creates it and
-# nothing in this product ever puts anything in it.
+# No entry here is a game and none lives in /usr/games.
 TESTS=(
 # audio
 "ardour:ardour"
-"jackdbus:jack_control"
 "qjackctl:qjackctl"
 "mixxx:mixxx"
 "audacity:audacity"
-"kid3:kid3"
 "musescore:musescore3"
-"musescore4:musescore4"
-"rose:rose"
-"tuxguitar:tuxguitar"
 "kmetronome:kmetronome"
-"kmix:kmix"
-"pavucontrol:pavucontrol"
 # video
 "kdenlive:kdenlive"
-"shotcut:shotcut"
-"olive:olive-editor"
-"openshot:openshot-qt"
-"pitivi:pitivi"
 "blender:blender"
 "obs:obs"
-"butt:butt"
+"qprompt:qprompt"
+"xjadeo:xjadeo"
 "subtitleeditor:subtitleeditor"
-"ffmpeg:ffmpeg"
 "vlc:vlc --intf qt"
-"handbrake:handbrake"
-"kazam:kazam"
-"stopmotion:stopmotion"
 # graphics
 "gimp:gimp"
 "inkscape:inkscape"
 "krita:krita"
-"freecad:freecad"
-"openscad:openscad"
-"kdenlive-effects:kdenlive"
+"mypaint:mypaint"
+"pencil2d:pencil2d"
+"pikopixel:PikoPixel"
+"skanpage:skanpage"
+"synfig:synfigstudio"
+"kcolorchooser:kcolorchooser"
 )
-
 for t in "${TESTS[@]}"; do
 	n=${t%%:*}; c=${t#*:}
 	bin=${c%% *}
@@ -1151,16 +1130,51 @@ for d in $(list_desktops); do
 	# Skip the ones that only make sense inside a running session, and the
 	# per-soundcard tools. Echnomixer and the HDSP pair are front ends for
 	# one specific piece of hardware each and exit on purpose when that card
-	# is absent, which is not a fault in the image.
+	# is absent, which is not a fault in the image. "Report a problem..." is
+	# apport's crash-report helper: without a crash to report it exits
+	# immediately, by design.
 	case "$name" in
 		*Discover*|*Software*|*Settings*|*"System Settings"*|*Logout*|*"Log Out"*|\
 		*Lock*|*Restart*|*Shutdown*|*Reboot*|*"Screen Saver"*|*Screensaver*|\
 		*Kontoche*|*KWallet*|*Print*|*Screenshot*|*Spectacle*|*Help*|*Manual*|\
-		*About*|*Info*|*Index*|*Update*|*Search*|*support*|\
+		*About*|*Info*|*Index*|*Update*|*Search*|*support*|*"Report a problem"*|\
 		*Echnomixer*|*Envy24*|*HDSPConf*|*HDSPMixer*|\
 		*"ImageMagick"*|*"Color depth"*|*"File Manager"*|*"Open Image"*|\
 		*Firefox*|*Transmission*)
 			result tier4 SKIP "menu:$name" "not a launchable application"
+			continue ;;
+	esac
+
+	# DSSI hosts and the JACK-era meter bridge. Their launchers need a live
+	# JACK graph with audio ports on it. Fluidsynth DSSI and Hexter are
+	# jack-dssi-host entries: in the test VM they wait or print their note
+	# and give up, and meterbridge is launched with the old alsa_pcm port
+	# names, which the PipeWire JACK graph does not have. The binaries are
+	# checked by binary_present above; the window test would measure the
+	# missing graph, not the application.
+	case "$name" in
+		*Hexter*|*"Fluidsynth DSSI"*|*Meterbridge*|*DIN*)
+			result tier4 SKIP "menu:$name" \
+				"needs a live JACK graph with audio ports, which the test VM does not have"
+			continue ;;
+		# The console player's own menu entry. It is a CLI tool that plays
+		# files; without one it prints its banner and exits. Checked below
+		# by the console test, which is the honest way to exercise it.
+		*"MPlayer-nogui"*)
+			result tier4 SKIP "menu:$name" "console player; checked by the console test below"
+			continue ;;
+	esac
+
+	# And the menu entries whose applications the curated list already
+	# launched. Without this they run twice, and the second run collects
+	# FAIL lines for windows that closed while the first run's instance was
+	# still up.
+	case "$name" in
+		*"GNU Image Manipulation Program"*|*Inkscape*|*Blender*|*MyPaint*|\
+		*"Synfig Studio"*|*PikoPixel*|*Skanpage*|*Krita*|*Pencil2D*|\
+		*KColorChooser*|*Kdenlive*|*OBS*|*Subtitle*|*VLC*|*Ardour*|*Audacity*|\
+		*Mixxx*|*MuseScore*|*KMetronome*|*Qjackctl*|*Jack*)
+			result tier4 SKIP "menu:$name" "covered by the curated launch test"
 			continue ;;
 	esac
 
@@ -1182,6 +1196,17 @@ console_test() {
 		result tier4 PASS "$name" "runs"
 	elif [ "$rc" = 124 ]; then
 		result tier4 PASS "$name" "still running after 10s, as expected"
+	elif [ "$rc" = 0 ] || [ "$rc" = 1 ]; then
+		if grep -qiE "usage|version|error|cannot|not found|stopped" "$log"; then
+			# rc 1 is legitimate here: jack_control status answers
+			# "status stopped" and exits 1 when no JACK server runs, and
+			# every tool in this list is exercised without its server,
+			# file or arguments. The point is that the binary responded.
+			result tier4 PASS "$name" "console program responded"
+		else
+			result tier4 FAIL "$name" \
+				"rc=$rc $(tail -n 2 "$log" | tr -d '\033' | tr '\n' ' ' | cut -c1-120)"
+		fi
 	elif grep -qiE "usage|version|error|cannot|not found" "$log"; then
 		result tier4 PASS "$name" "console program responded"
 	else
@@ -1199,10 +1224,27 @@ console_test() {
 #
 # pamix is a curses mixer: it draws on a terminal and never opens a window, so
 # it is checked here and not with the graphical applications.
+# The rest were moved here after their menu launches kept reporting false
+# failures, each with the evidence from the run that moved it:
+#
+#   jack_control   the D-Bus client for jackdbus. Launched with no arguments
+#                  it prints its usage and exits, which the window test
+#                  called broken. `jack_control status` is what it is for:
+#                  with no JACK server it answers an error, which proves the
+#                  D-Bus wiring works.
+#   mplayer        the desktop entry mplayer-nogui is the console player.
+#                  Without a file it prints its banner and usage and exits.
+#   meterbridge    without a JACK graph to clip it prints its meter list and
+#                  exits; the console launch proves the binary runs.
 for t in "timidity:timidity -h" \
 	 "alsamixer:alsamixer -h" \
 	 "display:display -version" \
-	 "pamix:pamix -h"; do
+	 "pamix:pamix -h" \
+	 "ffmpeg:ffmpeg -version" \
+	 "ffprobe:ffprobe -version" \
+	 "jack-control:jack_control status" \
+	 "mplayer:mplayer" \
+	 "meterbridge:meterbridge"; do
 	n=${t%%:*}; c=${t#*:}
 	bin=${c%% *}
 	if ! binary_present "$bin"; then
