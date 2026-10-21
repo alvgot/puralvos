@@ -3463,8 +3463,8 @@ ISOUT="$OUT/puralvos-audio-$STAMP.iso"
 # BUILD MACHINE's /usr/lib/grub/, and the modules the resulting core loads at
 # boot come from the ISO tree's boot/grub.
 #
-# Those must be the same GRUB, and the base ISO was built on 26.04 (GRUB 2.14)
-# while this build machine is 24.04 (GRUB 2.12). That was the grub_memcpy
+# Those must be the same GRUB, and the base ISO and this build machine
+# disagree (GRUB 2.14 on the base, 2.12 here). That was the grub_memcpy
 # rescue-prompt failure: a 2.12 core loading 2.14 modules. Passing -d to point
 # grub-mkrescue at the ISO's own modules is NOT a fix: -d expects a flat
 # single-platform module directory, and the ISO tree's platform directories

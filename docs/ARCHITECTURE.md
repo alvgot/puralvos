@@ -41,7 +41,7 @@ this is being written from scratch:
 `ubiquity-casper`; the oem-config packages are still in the same pool.)
 
 Note the live filesystem is layered rather than a single `filesystem.squashfs`:
-that changed in 24.04 and is the first thing to trip up anyone rebuilding it.
+this is the first thing to trip up anyone rebuilding it on this base.
 
 ## What the boot path costs, and what is masked
 
