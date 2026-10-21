@@ -433,8 +433,10 @@ see the audio branch's rules note).
 
 Fixes verified this session, per branch:
 
-- **self-test unit switch** — not on audio (the build unconditional-disabled
-  it and a self-test build ran nothing); now opt-in made effective;
+- **self-test unit switch** — on main and audio the build unconditionally
+  disabled `puralvos-selftest.service`, so a self-test build ran nothing;
+  now opt-in (only `PURALVOS_SELFTEST=1` verification ISOs enable it) and
+  made effective on every branch;
 - **`as_desktop` pins the applications to X11** on audio, video and the
   already-fixed main — on the 26.10 base, apps launched from the test had
   Wayland environment and their surfaces never appeared in `xwininfo`;
