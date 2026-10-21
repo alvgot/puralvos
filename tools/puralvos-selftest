@@ -199,6 +199,7 @@ as_desktop() {
 		XDG_SESSION_TYPE=x11 XDG_SESSION_CLASS=user \
 		XDG_SESSION_DESKTOP=KDE XDG_CURRENT_DESKTOP=KDE \
 		DESKTOP_SESSION=plasma \
+		WAYLAND_DISPLAY= GDK_BACKEND=x11 QT_QPA_PLATFORM=xcb \
 		XDG_CONFIG_DIRS="/etc/xdg:$PurHome/.config" \
 		XDG_DATA_DIRS="/usr/local/share:/usr/share:$PurHome/.local/share" \
 		XDG_CACHE_HOME="$PurHome/.cache" \
@@ -985,7 +986,11 @@ window_sig() {
 	printf '%s' "$raw" | grep -oE '^\s+0x[0-9a-f]+' | tr -d ' ' | sort
 }
 
-LAUNCH_TIMEOUT=${LAUNCH_TIMEOUT:-60}
+# 120 s, not 60. The 26.10 rebase made the applications larger and the first
+# runs on real hardware showed several of them — Blender, OBS, MuseScore —
+# taking 20 s or more to draw a window. 60 s reported healthy applications as
+# broken.
+LAUNCH_TIMEOUT=${LAUNCH_TIMEOUT:-120}
 
 # Close whatever an application left behind, whether or not it worked.
 reap() {
@@ -1113,16 +1118,35 @@ for d in $(list_desktops); do
 	# Skip the ones that only make sense inside a running session, and the
 	# per-soundcard tools. Echnomixer and the HDSP pair are front ends for
 	# one specific piece of hardware each and exit on purpose when that card
-	# is absent, which is not a fault in the image.
+	# is absent, which is not a fault in the image. "Report a problem..." is
+	# apport's crash-report helper: without a crash to report it exits
+	# immediately, by design.
 	case "$name" in
 		*Discover*|*Software*|*Settings*|*"System Settings"*|*Logout*|*"Log Out"*|\
 		*Lock*|*Restart*|*Shutdown*|*Reboot*|*"Screen Saver"*|*Screensaver*|\
 		*Kontoche*|*KWallet*|*Print*|*Screenshot*|*Spectacle*|*Help*|*Manual*|\
-		*About*|*Info*|*Index*|*Update*|*Search*|*support*|\
+		*About*|*Info*|*Index*|*Update*|*Search*|*support*|*"Report a problem"*|\
 		*Echnomixer*|*Envy24*|*HDSPConf*|*HDSPMixer*|\
 		*"ImageMagick"*|*"Color depth"*|*"File Manager"*|*"Open Image"*|\
 		*Firefox*|*Transmission*)
 			result tier4 SKIP "menu:$name" "not a launchable application"
+			continue ;;
+	esac
+
+	# The console player's own menu entry. It is a CLI tool that plays
+	# files; without one it prints its banner and exits. It is checked in the
+	# console tests below, which is the honest way to exercise it.
+	case "$name" in
+		*"MPlayer-nogui"*)
+			result tier4 SKIP "menu:$name" "console player; checked by the console test below"
+			continue ;;
+		# And the menu entries whose applications the curated list already
+		# launched. Without this they run twice, and the second run collects
+		# FAIL lines for windows that closed while the first run's instance
+		# was still up.
+		*Kdenlive*|*Blender*|*OBS*|*"Subtitle"*|*VLC*|*"Synfig Studio"*|\
+		*Qprompt*|*Xjadeo*)
+			result tier4 SKIP "menu:$name" "covered by the curated launch test"
 			continue ;;
 	esac
 
@@ -1144,6 +1168,11 @@ console_test() {
 		result tier4 PASS "$name" "runs"
 	elif [ "$rc" = 124 ]; then
 		result tier4 PASS "$name" "still running after 10s, as expected"
+	elif [ "$rc" = 1 ] && grep -qiE "stopped" "$log"; then
+		# jack_control status answers "status stopped" and exits 1 when no
+		# JACK server runs. An answer is the pass condition for this list:
+		# the point is that the binary and its D-Bus wiring work.
+		result tier4 PASS "$name" "console program responded"
 	elif grep -qiE "usage|version|error|cannot|not found" "$log"; then
 		result tier4 PASS "$name" "console program responded"
 	else
@@ -1158,7 +1187,8 @@ console_test() {
 # sweep above still reaches any application entry that remains installed.
 for t in "ffmpeg:ffmpeg -version" \
 	 "ffprobe:ffprobe -version" \
-	 "display:display -version"; do
+	 "display:display -version" \
+	 "mplayer:mplayer"; do
 	n=${t%%:*}; c=${t#*:}
 	bin=${c%% *}
 	if ! binary_present "$bin"; then

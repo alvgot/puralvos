@@ -83,7 +83,6 @@ linux-realtime
 #                              what does work
 #   ubuntu-edu-music           music education classroom tools; revisit if
 #                              PuralvOS grows an education story
-#   ubuntustudio-menu          menu entries; kept for video apps
 #   ubuntu-studio-desktop      THE umbrella. Installing it is how a media
 #                              workstation turns into a general desktop with
 #                              LibreOffice, snapd, synaptic and printer drivers

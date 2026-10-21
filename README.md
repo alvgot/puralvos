@@ -167,7 +167,7 @@ iterating. See the note on the resume marker in `tools/build-live.sh`.
 
 **`linux-realtime`, discovered at build time, not hardcoded.**
 
-This one caught us out. On Ubuntu 26.04:
+This one caught us out. On Ubuntu 26.10:
 
 ```
 linux-lowlatency   Depends: linux-image-generic     ← the GENERIC kernel
@@ -176,9 +176,8 @@ linux-realtime     Depends: linux-image-realtime    ← a real PREEMPT_RT build
 
 `linux-lowlatency` is the generic kernel with low-latency boot arguments. It
 still preempts cooperatively and will still glitch. And the same name means
-different things per release — on 24.04 it pulls `linux-image-lowlatency`, on
-26.04 it pulls `linux-image-generic` — so a hardcoded name would have been
-right on one base and silently wrong on the other.
+different things per release, so a hardcoded name would have been right on one
+base and silently wrong on another.
 
 `tools/kernel-select.py` asks apt what the kernel actually depends on and
 refuses any package whose image is not realtime.
