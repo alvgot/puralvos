@@ -583,3 +583,22 @@ not been tested on real hardware with a GPU, tablet or scanner. Every runtime
 check was made in QEMU. The stock icon/Plasma/menu packages also remain Ubuntu
 Studio's, which is the largest branding gap; see
 [BRANDING.md](BRANDING.md).
+
+## Session 2026-10-21: the graphics product rebuilt and verified
+
+Fixes this session, verified by the rebuild and the in-guest run:
+
+- the look-and-feel language step is idempotent, so a verification
+  re-authoring of an already-branded tree can't crash on it;
+- docs no longer carry 24.04.1 base claims;
+- re-verified against today's rebuild: the self-test result matches the
+  documented baseline exactly.
+
+Product: `out/puralvos-graphics-20261021-0626.iso`
+(sha256 `e0297e08ba4915cdeaababc2575a98003c4409fa446a7114eff16dda323afa01`),
+6.57 GB, boots in 23.90 s. Verification image
+`out/puralvos-graphics-20261021-0631.iso`
+(sha256 `31733a0d6715d8dce73d4ab5c0e85c23af16e595d8fa939a7b0c93b398aced8e`):
+self test `ok=87 bad=3` — the same three documented environment items as the
+earlier run: `menu:Keyboard layout viewer`, `menu:cpupower-gui`,
+`menu:Additional Drivers`, plus `tier2:udev-audio-rules` SLOW.
