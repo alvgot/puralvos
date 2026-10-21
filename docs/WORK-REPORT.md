@@ -488,3 +488,27 @@ five seconds. The full table is in [VIDEO.md](VIDEO.md).
 
 The audio branch's 90 s boot-gap investigation is unchanged and still waiting
 on the new audio ISO's `boot-report.txt`. The graphics-only branch is next.
+
+## Session 2026-10-21: the video product rebuilt and verified
+
+Fixes this session, verified by the rebuild and the in-guest run:
+
+- `as_desktop` **pins applications to X11** and the launch timeout is 120 s,
+  matching main and the other branches;
+- `jack_control`, `mplayer` and `meterbridge` are console tests;
+  `jack_control status`'s "status stopped" answer is accepted;
+- the menu sweep skips apport's "Report a problem...", `MPlayer-nogui` (a
+  console player, exercised as a console test) and the DSSI/JACK-dependent
+  audio entries that only exist in the full image;
+- the look-and-feel language step is idempotent, so a verification
+  re-authoring of an already-branded tree can't crash on it;
+- docs no longer carry 24.04.1 base claims.
+
+Product: `out/puralvos-video-20261021-0309.iso`
+(sha256 `ad757a62df74fda2bfecceb8d673e389334a139c763184fe873fce162a1ace99`),
+6.57 GB, boots in 23.43 s. Verification image
+`out/puralvos-video-20261021-0317.iso`
+(sha256 `37bfdbafbd2e796f031d46830a8a7357b74b3f62e839c23db71e8d0a6c571b74`):
+self test `ok=90 bad=3` — the three documented environment items
+(`menu:Keyboard layout viewer`, `menu:cpupower-gui`,
+`menu:Additional Drivers`) and `tier2:udev-audio-rules` SLOW.
