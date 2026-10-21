@@ -435,3 +435,35 @@ rebuilt with the same package lists. What the rebase forced:
   audio stack intact.
 - The family is four images from this harness: audio, graphics, video and the
   full merged one; this branch builds the audio ISO.
+
+## Session 2026-10-21: the audio product rebuilt and verified
+
+Fixes this session, verified by the rebuild and the in-guest run:
+
+- the build **named its output by the old live name** (`puralvos-live-<stamp>.iso`,
+  volid `PURALVOS_LIVE`) — now `puralvos-audio-<stamp>.iso`, `PURALVOS_AUDIO`,
+  and kvmtest runs name their data the same way;
+- the self-test unit was **unconditionally disabled**, so the verification
+  image ran no tests; now `PURALVOS_SELFTEST=1` enables it;
+- `as_desktop` **pins applications to X11** (`GDK_BACKEND=x11`,
+  `QT_QPA_PLATFORM=xcb`) and the launch timeout is 120 s — on the 26.10 base
+  the Wayland environment made guitarix, gxtuner and Internet DJ Console
+  report "no window within 60 s" while the applications were in fact fine;
+- `jack_control`, `mplayer` and `meterbridge` are console tests; the OK
+  criterion accepts `jack_control status` answering "status stopped" with
+  exit code 1; window launches for DSSI/JACK-dependent applications
+  (Fluidsynth DSSI, Hexter, DIN, Meterbridge) and apport's "Report a
+  problem..." are menu-sweep skips;
+- `musescore4` dropped from the test list: 26.10 packages musescore3;
+- the look-and-feel language step is idempotent, so a verification
+  re-authoring of an already-branded tree can't crash on it;
+- docs no longer carry 24.04.1 base claims.
+
+Product: `out/puralvos-audio-20261021-0245.iso`
+(sha256 `6f3188d40819357a2fbc7ec06daa0b0384ab7b52ad32647f91947486317b1500`),
+6.60 GB, boots in 22.09 s. Verification image
+`out/puralvos-audio-20261021-0247.iso`
+(sha256 `3ebed1f055c70e3ca1499b205f7061b3a8afc081823e38c8154d7620a13c2230`):
+self test `ok=123 bad=3` — the three documented environment items
+(`menu:Keyboard layout viewer`, `menu:cpupower-gui`,
+`menu:Additional Drivers`) and `tier2:udev-audio-rules` SLOW.
